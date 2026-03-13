@@ -1,20 +1,65 @@
 /**
- * Telegram MTProto Upload Service
- * * Direct file uploads to Telegram using MTProto protocol.
- * Supports files up to 1.5GB
+ * Telegram MTProto Upload Service - Improved Version
+ * 
+ * Features:
+ * - Direct file uploads to Telegram using MTProto protocol
+ * - Supports files up to 1.5GB
+ * - Link sharing support
+ * - Better error handling
+ * - Rate limiting
+ * - Proper logging
  */
 
 import { serve } from 'bun';
 import { TelegramClient } from 'telegram';
 import { StringSession } from 'telegram/sessions';
-import { CustomFile } from 'telegram/client/uploads'; // FIX: Ye import zaroori hai filenames ke liye
-import { existsSync, readFileSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import { CustomFile } from 'telegram/client/uploads';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { join, dirname } from 'path';
 
+// ============================================
 // Configuration
+// ============================================
 const PORT = process.env.PORT || 3002;
 const MAX_FILE_SIZE = 1.5 * 1024 * 1024 * 1024; // 1.5GB
-const SESSION_FILE = join(import.meta.dir, 'session.txt');
+const DATA_DIR = join(import.meta.dir, 'data');
+const SESSION_FILE = join(DATA_DIR, 'session.txt');
+const LOGS_DIR = join(DATA_DIR, 'logs');
+
+// Rate limiting
+const RATE_LIMIT_WINDOW = 60000; // 1 minute
+const RATE_LIMIT_MAX = 10; // max requests per window
+const uploadRequests = new Map<string, number[]>();
+
+// ============================================
+// Utility Functions
+// ============================================
+
+// Ensure directories exist
+function ensureDirectories() {
+  [DATA_DIR, LOGS_DIR].forEach(dir => {
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
+    }
+  });
+}
+
+// Logging with timestamp
+function log(level: 'INFO' | 'ERROR' | 'WARN' | 'DEBUG', message: string, data?: unknown) {
+  const timestamp = new Date().toISOString();
+  const logLine = `[${timestamp}] [${level}] ${message}${data ? ' | ' + JSON.stringify(data) : ''}`;
+  
+  console.log(logLine);
+  
+  // Also write to log file
+  const logFile = join(LOGS_DIR, `service-${new Date().toISOString().split('T')[0]}.log`);
+  try {
+    const existing = existsSync(logFile) ? readFileSync(logFile, 'utf-8') : '';
+    writeFileSync(logFile, existing + logLine + '\n');
+  } catch {
+    // Ignore log file errors
+  }
+}
 
 // Load .env file
 function loadEnv() {
@@ -30,7 +75,7 @@ function loadEnv() {
         }
       }
     });
-    console.log('[Service] ✅ Loaded .env file');
+    log('INFO', '✅ Loaded .env file');
   }
 }
 
@@ -39,7 +84,7 @@ function loadSession(): string {
   if (existsSync(SESSION_FILE)) {
     const session = readFileSync(SESSION_FILE, 'utf-8').trim();
     if (session) {
-      console.log('[Service] ✅ Loaded saved session');
+      log('INFO', '✅ Loaded saved session');
       return session;
     }
   }
@@ -49,14 +94,46 @@ function loadSession(): string {
 // Save session locally
 function saveSession(session: string) {
   writeFileSync(SESSION_FILE, session);
-  console.log('[Service] ✅ Session saved to session.txt');
+  log('INFO', '✅ Session saved');
 }
 
-// Load env and session
+// Rate limit check
+function checkRateLimit(clientId: string): boolean {
+  const now = Date.now();
+  const requests = uploadRequests.get(clientId) || [];
+  
+  // Filter old requests
+  const recentRequests = requests.filter(time => now - time < RATE_LIMIT_WINDOW);
+  
+  if (recentRequests.length >= RATE_LIMIT_MAX) {
+    return false; // Rate limited
+  }
+  
+  recentRequests.push(now);
+  uploadRequests.set(clientId, recentRequests);
+  return true;
+}
+
+// Clean old rate limit entries
+setInterval(() => {
+  const now = Date.now();
+  uploadRequests.forEach((requests, clientId) => {
+    const recent = requests.filter(time => now - time < RATE_LIMIT_WINDOW);
+    if (recent.length === 0) {
+      uploadRequests.delete(clientId);
+    } else {
+      uploadRequests.set(clientId, recent);
+    }
+  });
+}, 60000);
+
+// ============================================
+// Initialize
+// ============================================
+ensureDirectories();
 loadEnv();
 const savedSession = loadSession();
 
-// Config
 const config = {
   apiId: parseInt(process.env.TELEGRAM_API_ID || '0'),
   apiHash: process.env.TELEGRAM_API_HASH || '',
@@ -65,19 +142,20 @@ const config = {
   session: process.env.TELEGRAM_SESSION || savedSession,
 };
 
-// Debug
-console.log('[Service] Config:', {
-  apiId: config.apiId,
+log('INFO', 'Config loaded', {
+  apiId: config.apiId ? '✅' : '❌',
   apiHash: config.apiHash ? '✅' : '❌',
   botToken: config.botToken ? '✅' : '❌',
   channelId: config.channelId ? '✅' : '❌',
 });
 
-// CORS headers
+// ============================================
+// HTTP Helpers
+// ============================================
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-Upload-Id',
+  'Access-Control-Allow-Headers': 'Content-Type, X-Upload-Id, X-Client-Id',
 };
 
 function jsonResponse(data: unknown, status = 200): Response {
@@ -87,98 +165,129 @@ function jsonResponse(data: unknown, status = 200): Response {
   });
 }
 
-// Telegram client
-let client: TelegramClient | null = null;
-let isInitialized = false;
-
-async function initializeClient(): Promise<boolean> {
-  if (client && isInitialized) return true;
-
-  try {
-    console.log('[Service] Initializing Telegram client...');
-    
-    if (!config.apiId || !config.apiHash || !config.botToken || !config.channelId) {
-      console.error('[Service] ❌ Missing configuration!');
-      return false;
-    }
-
-    const session = new StringSession(config.session);
-    
-    client = new TelegramClient(session, config.apiId, config.apiHash, {
-      connectionRetries: 5,
-      timeout: 30000,
-      autoReconnect: true,
-    });
-
-    console.log('[Service] Connecting to Telegram...');
-    await client.start({ botAuthToken: config.botToken });
-
-    // Save session for faster restart
-    const sessionString = client.session.save() as unknown as string;
-    if (sessionString) {
-      const isNewSession = !existsSync(SESSION_FILE);
-      saveSession(sessionString);
-
-      // Naya feature: Naya session banne par channel me .txt bhejna
-      if (isNewSession) {
-        try {
-          const sessionBuffer = Buffer.from(sessionString, 'utf-8');
-          const sessionCustomFile = new CustomFile('session.txt', sessionBuffer.byteLength, '', sessionBuffer);
-          await client.sendFile(config.channelId, {
-            file: sessionCustomFile,
-            caption: '🔐 Backup: Telegram String Session\nIs file ko secure rakhein!',
-            forceDocument: true,
-          });
-          console.log('[Service] ✅ Session file backed up to Telegram Channel!');
-        } catch (backupError) {
-          console.error('[Service] ❌ Failed to backup session to channel:', backupError);
-        }
-      }
-    }
-
-    isInitialized = true;
-    console.log('[Service] ✅ Telegram client ready!');
-    return true;
-  } catch (error) {
-    console.error('[Service] ❌ Init error:', error);
-    return false;
-  }
+function errorResponse(error: string, status = 500, details?: unknown): Response {
+  log('ERROR', error, details);
+  return jsonResponse({ success: false, error }, status);
 }
 
-// Handle upload
-async function handleUpload(request: Request): Promise<Response> {
-  const uploadId = request.headers.get('X-Upload-Id') || crypto.randomUUID();
+// ============================================
+// Telegram Client
+// ============================================
+let client: TelegramClient | null = null;
+let isInitialized = false;
+let initPromise: Promise<boolean> | null = null;
+
+async function initializeClient(): Promise<boolean> {
+  // If already initializing, wait for it
+  if (initPromise) {
+    return initPromise;
+  }
   
+  if (client && isInitialized) return true;
+
+  initPromise = (async () => {
+    try {
+      log('INFO', '🚀 Initializing Telegram client...');
+      
+      if (!config.apiId || !config.apiHash || !config.botToken || !config.channelId) {
+        log('ERROR', '❌ Missing configuration');
+        return false;
+      }
+
+      const session = new StringSession(config.session);
+      
+      client = new TelegramClient(session, config.apiId, config.apiHash, {
+        connectionRetries: 5,
+        timeout: 30000,
+        autoReconnect: true,
+      });
+
+      log('INFO', '🔌 Connecting to Telegram...');
+      await client.start({ botAuthToken: config.botToken });
+
+      // Save session
+      const sessionString = client.session.save() as unknown as string;
+      if (sessionString) {
+        const isNewSession = !existsSync(SESSION_FILE);
+        saveSession(sessionString);
+
+        // Backup session to channel on first run
+        if (isNewSession) {
+          try {
+            const sessionBuffer = Buffer.from(sessionString, 'utf-8');
+            const sessionFile = new CustomFile('session.txt', sessionBuffer.byteLength, '', sessionBuffer);
+            await client.sendFile(config.channelId, {
+              file: sessionFile,
+              caption: '🔐 Backup: Telegram String Session\n\n⚠️ Keep this file secure!',
+              forceDocument: true,
+            });
+            log('INFO', '✅ Session backed up to channel');
+          } catch (backupError) {
+            log('WARN', 'Failed to backup session', backupError);
+          }
+        }
+      }
+
+      isInitialized = true;
+      log('INFO', '✅ Telegram client ready');
+      return true;
+    } catch (error) {
+      log('ERROR', 'Failed to initialize client', error);
+      initPromise = null;
+      return false;
+    }
+  })();
+
+  return initPromise;
+}
+
+// ============================================
+// Upload Handlers
+// ============================================
+
+// File upload
+async function handleFileUpload(request: Request): Promise<Response> {
+  const uploadId = request.headers.get('X-Upload-Id') || crypto.randomUUID();
+  const clientId = request.headers.get('X-Client-Id') || 'anonymous';
+  
+  // Rate limit check
+  if (!checkRateLimit(clientId)) {
+    return errorResponse('Too many requests. Please wait a moment.', 429);
+  }
+
   try {
     if (!client || !isInitialized) {
-      return jsonResponse({ success: false, error: 'Service not ready', uploadId }, 503);
+      const success = await initializeClient();
+      if (!success) {
+        return errorResponse('Service not ready. Please try again.', 503);
+      }
     }
 
     const formData = await request.formData();
     const file = formData.get('file') as File;
-    const caption = formData.get('caption') as string || '';
-    const fileName = formData.get('fileName') as string || file?.name || 'file';
+    const caption = (formData.get('caption') as string) || '';
+    const fileName = (formData.get('fileName') as string) || file?.name || 'file';
 
     if (!file) {
-      return jsonResponse({ success: false, error: 'No file provided', uploadId }, 400);
+      return errorResponse('No file provided', 400);
     }
 
     if (file.size > MAX_FILE_SIZE) {
-      return jsonResponse({ success: false, error: 'File exceeds 1.5GB limit', uploadId }, 400);
+      return errorResponse('File exceeds 1.5GB limit', 400);
     }
 
-    console.log(`[Service] 📤 Uploading: ${fileName} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+    log('INFO', `📤 Uploading file: ${fileName}`, { size: `${(file.size / 1024 / 1024).toFixed(2)} MB` });
+
+    const startTime = Date.now();
 
     // Convert to Buffer
     const arrayBuffer = await file.arrayBuffer();
     const fileBuffer = Buffer.from(arrayBuffer);
 
-    const startTime = Date.now();
-
-    // FIX: CustomFile use karna zaroori hai exact naam aur extension bhejne ke liye
+    // CustomFile for exact filename
     const fileToUpload = new CustomFile(fileName, fileBuffer.byteLength, '', fileBuffer);
 
-    // Upload file
+    // Upload to Telegram
     await client.sendFile(config.channelId, {
       file: fileToUpload,
       caption: caption || undefined,
@@ -186,7 +295,7 @@ async function handleUpload(request: Request): Promise<Response> {
     });
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-    console.log(`[Service] ✅ Upload complete: ${fileName} in ${duration}s`);
+    log('INFO', `✅ File uploaded: ${fileName}`, { duration: `${duration}s` });
 
     return jsonResponse({
       success: true,
@@ -197,54 +306,151 @@ async function handleUpload(request: Request): Promise<Response> {
     });
 
   } catch (error) {
-    console.error('[Service] ❌ Upload error:', error);
+    log('ERROR', 'File upload failed', error);
+    return errorResponse('Upload failed. Please try again.', 500);
+  }
+}
+
+// Link submission
+async function handleLinkUpload(request: Request): Promise<Response> {
+  const uploadId = request.headers.get('X-Upload-Id') || crypto.randomUUID();
+  const clientId = request.headers.get('X-Client-Id') || 'anonymous';
+  
+  // Rate limit check
+  if (!checkRateLimit(clientId)) {
+    return errorResponse('Too many requests. Please wait a moment.', 429);
+  }
+
+  try {
+    if (!client || !isInitialized) {
+      const success = await initializeClient();
+      if (!success) {
+        return errorResponse('Service not ready. Please try again.', 503);
+      }
+    }
+
+    const body = await request.json();
+    const { url, caption } = body as { url?: string; caption?: string };
+
+    if (!url) {
+      return errorResponse('No URL provided', 400);
+    }
+
+    // Validate URL
+    try {
+      const parsedUrl = new URL(url);
+      if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+        return errorResponse('Invalid URL protocol. Only HTTP/HTTPS allowed.', 400);
+      }
+    } catch {
+      return errorResponse('Invalid URL format', 400);
+    }
+
+    log('INFO', `🔗 Processing link`, { url: url.substring(0, 50) + '...' });
+
+    const startTime = Date.now();
+
+    // Format message with link
+    const message = caption || `📎 Shared Link\n\n🔗 URL: ${url}\n\n⏰ Submitted: ${new Date().toISOString()}`;
+
+    // Send message to channel
+    await client.sendMessage(config.channelId, {
+      message,
+      parseMode: 'html',
+    });
+
+    const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+    log('INFO', `✅ Link submitted`, { duration: `${duration}s` });
+
     return jsonResponse({
-      success: false,
-      error: 'Upload failed. Please try again.',
+      success: true,
       uploadId,
-    }, 500);
+      url,
+      duration: parseFloat(duration),
+    });
+
+  } catch (error) {
+    log('ERROR', 'Link submission failed', error);
+    return errorResponse('Failed to submit link. Please try again.', 500);
   }
 }
 
 // Status check
-async function checkStatus(): Promise<Response> {
-  const initialized = await initializeClient();
+async function handleStatus(): Promise<Response> {
+  const initialized = client && isInitialized;
   return jsonResponse({
     success: true,
     status: initialized ? 'ready' : 'initializing',
     hasConfig: !!(config.apiId && config.apiHash && config.botToken && config.channelId),
+    timestamp: new Date().toISOString(),
   });
 }
 
-// Request handler
+// ============================================
+// Request Router
+// ============================================
 async function handleRequest(request: Request): Promise<Response> {
   const url = new URL(request.url);
+  const method = request.method;
 
-  if (request.method === 'OPTIONS') {
+  // CORS preflight
+  if (method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
-  if (url.pathname === '/health' || url.pathname === '/') {
-    return checkStatus();
-  }
+  // Routes
+  try {
+    // Health check
+    if (url.pathname === '/' || url.pathname === '/health') {
+      return handleStatus();
+    }
 
-  if (url.pathname === '/upload' && request.method === 'POST') {
-    if (!isInitialized) await initializeClient();
-    return handleUpload(request);
-  }
+    // File upload
+    if (url.pathname === '/upload' && method === 'POST') {
+      return handleFileUpload(request);
+    }
 
-  return jsonResponse({ success: false, error: 'Not found' }, 404);
+    // Link upload - NEW ENDPOINT
+    if (url.pathname === '/upload-link' && method === 'POST') {
+      return handleLinkUpload(request);
+    }
+
+    // Status
+    if (url.pathname === '/status') {
+      return handleStatus();
+    }
+
+    // 404
+    return errorResponse('Not found', 404);
+
+  } catch (error) {
+    log('ERROR', 'Request handler error', error);
+    return errorResponse('Internal server error', 500);
+  }
 }
 
-// Start server
-console.log(`[Service] 🚀 Starting on port ${PORT}...`);
+// ============================================
+// Start Server
+// ============================================
+log('INFO', `🚀 Starting Telegram Upload Service on port ${PORT}...`);
 
+// Initialize client in background
 initializeClient().then((success) => {
   if (success) {
-    console.log('[Service] ✅ Ready to accept uploads!');
+    log('INFO', '✅ Service ready to accept uploads!');
   } else {
-    console.warn('[Service] ⚠️ Check your .env file');
+    log('WARN', '⚠️ Service started but Telegram not connected. Check .env file');
   }
 });
 
-serve({ port: PORT, fetch: handleRequest });
+// Start HTTP server
+serve({
+  port: PORT,
+  fetch: handleRequest,
+  error(error) {
+    log('ERROR', 'Server error', error);
+    return new Response('Internal Server Error', { status: 500 });
+  },
+});
+
+log('INFO', `🌐 HTTP server listening on port ${PORT}`);

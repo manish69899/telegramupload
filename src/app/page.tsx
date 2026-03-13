@@ -135,7 +135,27 @@ export default function HomePage() {
     formDataToSend.append('caption', caption);
 
     try {
-      const response = await fetch(`${SERVICE_URL}/upload`, { method: 'POST', headers: { 'X-Upload-Id': item.id }, body: formDataToSend });
+      const response = await fetch(`${SERVICE_URL}/upload`, {
+        method: 'POST',
+        headers: { 'X-Upload-Id': item.id },
+        body: formDataToSend,
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorMsg = 'Upload failed';
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMsg = errorJson.error || errorMsg;
+        } catch {
+          if (response.status === 413) errorMsg = 'File too large (max 1.5GB)';
+          else if (response.status === 429) errorMsg = 'Too many requests. Please wait.';
+          else if (response.status === 503) errorMsg = 'Service is initializing. Please wait.';
+        }
+        setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'error', error: errorMsg } : i));
+        return false;
+      }
+      
       const result = await response.json();
       if (result.success) {
         setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'completed', progress: 100 } : i));
@@ -143,8 +163,9 @@ export default function HomePage() {
       }
       setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'error', error: result.error || 'Failed' } : i));
       return false;
-    } catch {
-      setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'error', error: 'Network error' } : i));
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Network error. Check your connection.';
+      setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'error', error: errorMsg } : i));
       return false;
     }
   };
@@ -152,7 +173,30 @@ export default function HomePage() {
   const submitLink = async (item: LinkItem): Promise<boolean> => {
     const caption = `📚 PYQERA Link\n👤 ${formData.name || 'Anonymous'}\n💬 ${formData.message || 'N/A'}\n🔗 ${item.url}\n📝 ${item.description || 'N/A'}`;
     try {
-      const response = await fetch(`${SERVICE_URL}/upload-link`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ caption, url: item.url }) });
+      const response = await fetch(`${SERVICE_URL}/upload-link`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-Upload-Id': item.id,
+        },
+        body: JSON.stringify({ caption, url: item.url }),
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorMsg = 'Failed to submit link';
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMsg = errorJson.error || errorMsg;
+        } catch {
+          if (response.status === 404) errorMsg = 'Service endpoint not found';
+          else if (response.status === 429) errorMsg = 'Too many requests. Please wait.';
+          else if (response.status === 503) errorMsg = 'Service is initializing. Please wait.';
+        }
+        setLinkItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'error', error: errorMsg } : i));
+        return false;
+      }
+      
       const result = await response.json();
       if (result.success) {
         setLinkItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'completed' } : i));
@@ -160,8 +204,9 @@ export default function HomePage() {
       }
       setLinkItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'error', error: result.error || 'Failed' } : i));
       return false;
-    } catch {
-      setLinkItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'error', error: 'Network error' } : i));
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Network error. Check your connection.';
+      setLinkItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'error', error: errorMsg } : i));
       return false;
     }
   };
@@ -208,29 +253,29 @@ export default function HomePage() {
   const uploadingItems = items.filter(i => i.status === 'uploading').length + linkItems.filter(i => i.status === 'uploading').length;
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-br from-slate-50 via-white to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 selection:bg-primary/20 transition-colors duration-500">
+    <div className="min-h-screen flex flex-col bg-gradient-to-br from-blue-50/50 via-white to-indigo-50/30 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950 selection:bg-primary/20 transition-colors duration-500">
       
       {/* Animated Background */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-gradient-to-br from-primary/20 to-blue-500/20 rounded-full blur-3xl animate-pulse" style={{ animationDuration: '4s' }} />
-        <div className="absolute top-1/2 -left-40 w-96 h-96 bg-gradient-to-br from-purple-500/10 to-primary/10 rounded-full blur-3xl animate-pulse" style={{ animationDuration: '6s' }} />
-        <div className="absolute -bottom-40 right-1/3 w-80 h-80 bg-gradient-to-br from-blue-500/10 to-primary/15 rounded-full blur-3xl animate-pulse" style={{ animationDuration: '5s' }} />
+        <div className="absolute -top-40 -right-40 w-80 h-80 bg-gradient-to-br from-primary/30 to-blue-400/30 rounded-full blur-3xl animate-pulse" style={{ animationDuration: '4s' }} />
+        <div className="absolute top-1/2 -left-40 w-96 h-96 bg-gradient-to-br from-violet-400/20 to-primary/20 rounded-full blur-3xl animate-pulse" style={{ animationDuration: '6s' }} />
+        <div className="absolute -bottom-40 right-1/3 w-80 h-80 bg-gradient-to-br from-blue-400/20 to-primary/25 rounded-full blur-3xl animate-pulse" style={{ animationDuration: '5s' }} />
       </div>
 
       {/* Header */}
-      <header className="sticky top-0 z-50 border-b border-slate-200/50 dark:border-slate-800/50 bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl">
+      <header className="sticky top-0 z-50 border-b border-gray-200/60 dark:border-gray-700/60 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2.5 group">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center shadow-lg shadow-primary/20 group-hover:shadow-primary/40 group-hover:scale-105 transition-all duration-300">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-blue-600 flex items-center justify-center shadow-lg shadow-primary/30 group-hover:shadow-primary/50 group-hover:scale-105 transition-all duration-300">
               <GraduationCap className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-black tracking-tight text-slate-900 dark:text-white">PYQERA</h1>
-              <p className="text-[9px] font-bold uppercase tracking-widest text-primary/80">Community</p>
+              <h1 className="text-lg font-black tracking-tight text-gray-900 dark:text-white">PYQERA</h1>
+              <p className="text-[9px] font-bold uppercase tracking-widest text-primary">Community</p>
             </div>
           </div>
           
-          <button onClick={toggleTheme} className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:scale-110 hover:rotate-12 transition-all duration-300 text-slate-600 dark:text-slate-400">
+          <button onClick={toggleTheme} className="p-2 rounded-xl bg-gray-100 dark:bg-gray-800 hover:scale-110 hover:rotate-12 transition-all duration-300 text-gray-600 dark:text-gray-300">
             {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
           </button>
         </div>
@@ -241,30 +286,30 @@ export default function HomePage() {
         
         {/* Hero */}
         <div className="text-center mb-6 animate-in fade-in slide-in-from-top-4 duration-700">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold uppercase tracking-wider mb-3 border border-primary/20">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold uppercase tracking-wider mb-3 border border-primary/30">
             <Sparkles className="w-3 h-3" />
             Share & Help Students
           </div>
-          <h2 className="text-2xl sm:text-3xl md:text-4xl font-black text-slate-900 dark:text-white mb-2">
-            Upload Notes & <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-blue-600">PYQs</span>
+          <h2 className="text-2xl sm:text-3xl md:text-4xl font-black text-gray-900 dark:text-white mb-2">
+            Upload Notes & <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-blue-500">PYQs</span>
           </h2>
-          <p className="text-sm text-slate-600 dark:text-slate-400 max-w-lg mx-auto">Help thousands of students by sharing your study materials</p>
+          <p className="text-sm text-gray-600 dark:text-gray-300 max-w-lg mx-auto">Help thousands of students by sharing your study materials</p>
         </div>
 
         {/* Two Options Grid */}
         <div className="grid lg:grid-cols-2 gap-4 mb-4">
           
           {/* Option 1: Website Upload */}
-          <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-2xl border border-slate-200/50 dark:border-slate-800/50 shadow-xl shadow-slate-200/50 dark:shadow-black/20 overflow-hidden animate-in fade-in slide-in-from-left-4 duration-700">
+          <div className="bg-white/90 dark:bg-gray-900/90 backdrop-blur-xl rounded-2xl border border-gray-200/60 dark:border-gray-700/60 shadow-xl shadow-gray-200/40 dark:shadow-black/30 overflow-hidden animate-in fade-in slide-in-from-left-4 duration-700">
             
             {/* Tab Header */}
-            <div className="flex border-b border-slate-200/50 dark:border-slate-800/50">
-              <button onClick={() => setActiveTab('files')} className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm font-semibold transition-all relative ${activeTab === 'files' ? 'text-primary' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>
+            <div className="flex border-b border-gray-200/60 dark:border-gray-700/60">
+              <button onClick={() => setActiveTab('files')} className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm font-semibold transition-all relative ${activeTab === 'files' ? 'text-primary' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>
                 <Upload className="w-4 h-4" />
                 Files {items.length > 0 && <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-primary text-white">{items.length}</span>}
                 {activeTab === 'files' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />}
               </button>
-              <button onClick={() => setActiveTab('links')} className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm font-semibold transition-all relative ${activeTab === 'links' ? 'text-primary' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>
+              <button onClick={() => setActiveTab('links')} className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm font-semibold transition-all relative ${activeTab === 'links' ? 'text-primary' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>
                 <LinkIcon className="w-4 h-4" />
                 Links {linkItems.length > 0 && <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-primary text-white">{linkItems.length}</span>}
                 {activeTab === 'links' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />}
@@ -280,13 +325,13 @@ export default function HomePage() {
                     onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
                     onDragLeave={() => setIsDragging(false)}
                     onDrop={handleDrop}
-                    className={`relative border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all duration-300 group ${isDragging ? 'border-primary bg-primary/5 scale-[1.01]' : 'border-slate-300 dark:border-slate-700 hover:border-primary/50 hover:bg-slate-50 dark:hover:bg-slate-800/50'}`}
+                    className={`relative border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all duration-300 group ${isDragging ? 'border-primary bg-primary/5 scale-[1.01]' : 'border-gray-300 dark:border-gray-600 hover:border-primary hover:bg-primary/5'}`}
                   >
-                    <div className="w-12 h-12 mx-auto mb-2 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center group-hover:scale-110 group-hover:bg-primary/10 transition-all duration-300">
-                      <FolderOpen className="w-6 h-6 text-slate-400 group-hover:text-primary transition-colors" />
+                    <div className="w-12 h-12 mx-auto mb-2 rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center group-hover:scale-110 group-hover:bg-primary/20 transition-all duration-300">
+                      <FolderOpen className="w-6 h-6 text-gray-400 group-hover:text-primary transition-colors" />
                     </div>
-                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">Drop files or click</p>
-                    <p className="text-xs text-slate-500 mt-0.5">PDF, Images, Docs supported</p>
+                    <p className="text-sm font-semibold text-gray-700 dark:text-gray-200">Drop files or click</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">PDF, Images, Docs supported</p>
                     <input type="file" multiple onChange={handleFileSelect} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
                   </div>
 
@@ -294,17 +339,17 @@ export default function HomePage() {
                   {items.length > 0 && (
                     <div className="max-h-48 overflow-y-auto space-y-2 pr-1 custom-scrollbar animate-in fade-in duration-300">
                       {items.map((item, idx) => (
-                        <div key={item.id} className="bg-slate-50 dark:bg-slate-800/50 rounded-lg overflow-hidden group animate-in slide-in-from-right-2 duration-300" style={{ animationDelay: `${idx * 50}ms` }}>
+                        <div key={item.id} className="bg-gray-50 dark:bg-gray-800/70 rounded-lg overflow-hidden group animate-in slide-in-from-right-2 duration-300 border border-gray-100 dark:border-gray-700" style={{ animationDelay: `${idx * 50}ms` }}>
                           {/* File Row */}
                           <div className="flex items-center gap-2 p-2">
-                            <span className="w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-600 dark:text-slate-400 flex-shrink-0">{idx + 1}</span>
-                            <div className={`p-1.5 rounded-lg flex-shrink-0 ${item.status === 'completed' ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600' : item.status === 'error' ? 'bg-red-100 dark:bg-red-900/30 text-red-600' : item.status === 'uploading' ? 'bg-primary/10 text-primary' : 'bg-slate-200 dark:bg-slate-700 text-slate-500'}`}>
+                            <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-[10px] font-bold flex-shrink-0">{idx + 1}</span>
+                            <div className={`p-1.5 rounded-lg flex-shrink-0 ${item.status === 'completed' ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600' : item.status === 'error' ? 'bg-red-100 dark:bg-red-900/40 text-red-500' : item.status === 'uploading' ? 'bg-primary/20 text-primary' : 'bg-gray-200 dark:bg-gray-700 text-gray-500'}`}>
                               {item.status === 'completed' ? <CheckCircle2 className="w-3.5 h-3.5" /> : item.status === 'error' ? <AlertCircle className="w-3.5 h-3.5" /> : item.status === 'uploading' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate">{item.name}</p>
+                              <p className="text-xs font-medium text-gray-700 dark:text-gray-200 truncate">{item.name}</p>
                               <div className="flex items-center gap-2">
-                                <p className="text-[10px] text-slate-500">{formatFileSize(item.size)}</p>
+                                <p className="text-[10px] text-gray-500 dark:text-gray-400">{formatFileSize(item.size)}</p>
                                 {item.description && <p className="text-[10px] text-primary truncate">• {item.description}</p>}
                               </div>
                             </div>
@@ -314,12 +359,12 @@ export default function HomePage() {
                               <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <button 
                                   onClick={() => setExpandedDesc(expandedDesc === item.id ? null : item.id)} 
-                                  className={`p-1 rounded transition-all ${expandedDesc === item.id ? 'bg-primary/10 text-primary' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-primary'}`}
+                                  className={`p-1 rounded transition-all ${expandedDesc === item.id ? 'bg-primary/20 text-primary' : 'hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 hover:text-primary'}`}
                                   title="Add description"
                                 >
                                   <MessageCircle className="w-3.5 h-3.5" />
                                 </button>
-                                <button onClick={() => removeItem(item.id)} className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-slate-400 hover:text-red-500 transition-all">
+                                <button onClick={() => removeItem(item.id)} className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/40 text-gray-400 hover:text-red-500 transition-all">
                                   <X className="w-3.5 h-3.5" />
                                 </button>
                               </div>
@@ -334,7 +379,7 @@ export default function HomePage() {
                                 placeholder="e.g., BCA 3rd Sem Computer Networks"
                                 value={item.description || ''}
                                 onChange={(e) => updateItemDescription(item.id, e.target.value)}
-                                className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 focus:ring-1 focus:ring-primary/30 focus:border-primary outline-none transition-all"
+                                className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 focus:ring-1 focus:ring-primary/30 focus:border-primary outline-none transition-all"
                                 autoFocus
                               />
                             </div>
@@ -350,27 +395,27 @@ export default function HomePage() {
               {activeTab === 'links' && (
                 <div className="space-y-3">
                   <div className="flex gap-2">
-                    <input type="text" placeholder="Paste any cloud link..." value={newLink} onChange={(e) => setNewLink(e.target.value)} className="flex-1 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all" />
+                    <input type="text" placeholder="Paste any cloud link..." value={newLink} onChange={(e) => setNewLink(e.target.value)} className="flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all" />
                     <button onClick={addLink} disabled={!newLink.trim()} className="px-4 py-2 bg-primary hover:bg-primary/90 text-white text-sm font-semibold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:scale-105 active:scale-95">
                       <Zap className="w-4 h-4" />
                     </button>
                   </div>
-                  <input type="text" placeholder="Description (optional)" value={newLinkDesc} onChange={(e) => setNewLinkDesc(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all" />
+                  <input type="text" placeholder="Description (optional)" value={newLinkDesc} onChange={(e) => setNewLinkDesc(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all" />
 
                   {/* Links List */}
                   {linkItems.length > 0 && (
                     <div className="max-h-32 overflow-y-auto space-y-1.5 animate-in fade-in duration-300">
                       {linkItems.map((item, idx) => (
-                        <div key={item.id} className="flex items-center gap-2 p-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 group animate-in slide-in-from-right-2 duration-300" style={{ animationDelay: `${idx * 50}ms` }}>
-                          <span className="w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-600 dark:text-slate-400">{idx + 1}</span>
-                          <div className={`p-1.5 rounded-lg ${item.status === 'completed' ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600' : item.status === 'error' ? 'bg-red-100 dark:bg-red-900/30 text-red-600' : item.status === 'uploading' ? 'bg-primary/10 text-primary' : 'bg-slate-200 dark:bg-slate-700 text-slate-500'}`}>
+                        <div key={item.id} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-gray-800/70 group animate-in slide-in-from-right-2 duration-300 border border-gray-100 dark:border-gray-700" style={{ animationDelay: `${idx * 50}ms` }}>
+                          <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-[10px] font-bold">{idx + 1}</span>
+                          <div className={`p-1.5 rounded-lg ${item.status === 'completed' ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600' : item.status === 'error' ? 'bg-red-100 dark:bg-red-900/40 text-red-500' : item.status === 'uploading' ? 'bg-primary/20 text-primary' : 'bg-gray-200 dark:bg-gray-700 text-gray-500'}`}>
                             {item.status === 'completed' ? <CheckCircle2 className="w-3.5 h-3.5" /> : item.status === 'error' ? <AlertCircle className="w-3.5 h-3.5" /> : item.status === 'uploading' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LinkIcon className="w-3.5 h-3.5" />}
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-xs font-medium text-primary truncate">{item.url.length > 35 ? item.url.substring(0, 35) + '...' : item.url}</p>
-                            {item.description && <p className="text-[10px] text-slate-500 truncate">{item.description}</p>}
+                            {item.description && <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate">{item.description}</p>}
                           </div>
-                          {item.status === 'pending' && <button onClick={() => removeLink(item.id)} className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"><X className="w-3.5 h-3.5" /></button>}
+                          {item.status === 'pending' && <button onClick={() => removeLink(item.id)} className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/40 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"><X className="w-3.5 h-3.5" /></button>}
                         </div>
                       ))}
                     </div>
@@ -380,20 +425,20 @@ export default function HomePage() {
 
               {/* User Details & Submit */}
               {totalItems > 0 && (
-                <div className="mt-3 pt-3 border-t border-slate-200/50 dark:border-slate-800/50 animate-in fade-in duration-300">
+                <div className="mt-3 pt-3 border-t border-gray-200/60 dark:border-gray-700/60 animate-in fade-in duration-300">
                   <div className="flex gap-2 mb-3">
-                    <input type="text" placeholder="Your name (optional)" value={formData.name || ''} onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))} className="flex-1 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all" />
-                    <input type="text" placeholder="Subject/Semester" value={formData.message || ''} onChange={(e) => setFormData(prev => ({ ...prev, message: e.target.value }))} className="flex-1 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all" />
+                    <input type="text" placeholder="Your name (optional)" value={formData.name || ''} onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))} className="flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all" />
+                    <input type="text" placeholder="Subject/Semester" value={formData.message || ''} onChange={(e) => setFormData(prev => ({ ...prev, message: e.target.value }))} className="flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all" />
                   </div>
                   
                   {/* Stats Bar */}
                   <div className="flex items-center justify-between mb-3 px-1">
-                    <div className="flex items-center gap-3 text-xs text-slate-500">
+                    <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
                       {totalItems > 0 && <span>{totalItems} total</span>}
-                      {completedItems > 0 && <span className="text-emerald-600">{completedItems} done</span>}
+                      {completedItems > 0 && <span className="text-emerald-600 dark:text-emerald-400">{completedItems} done</span>}
                       {uploadingItems > 0 && <span className="text-primary">{uploadingItems} uploading</span>}
                     </div>
-                    {completedItems > 0 && <button onClick={clearCompleted} className="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">Clear done</button>}
+                    {completedItems > 0 && <button onClick={clearCompleted} className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">Clear done</button>}
                   </div>
 
                   {/* Submit Button */}
@@ -420,18 +465,18 @@ export default function HomePage() {
                 </div>
                 <div>
                   <span className="text-[10px] font-bold text-[#0088cc] uppercase tracking-wider">Quick Option</span>
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">Send via Telegram</h3>
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">Send via Telegram</h3>
                 </div>
               </div>
 
-              <p className="text-sm text-slate-600 dark:text-slate-400 mb-4 leading-relaxed">
+              <p className="text-sm text-gray-600 dark:text-gray-300 mb-4 leading-relaxed">
                 Share files, links, or PYQs directly with us on Telegram. Quick response guaranteed!
               </p>
 
               {/* Features */}
               <div className="grid grid-cols-2 gap-2 mb-4">
                 {['Large files', 'Any link', 'Quick reply', 'Direct chat'].map((f, i) => (
-                  <div key={i} className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
+                  <div key={i} className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
                     <CheckCircle2 className="w-3.5 h-3.5 text-[#0088cc]" />
                     {f}
                   </div>
@@ -444,7 +489,7 @@ export default function HomePage() {
                   Open Telegram
                 </a>
                 <button onClick={copyTelegramLink} className="px-4 py-2.5 bg-white/50 dark:bg-white/10 hover:bg-white/70 dark:hover:bg-white/20 border border-[#0088cc]/20 rounded-xl transition-all hover:scale-105 active:scale-95">
-                  {linkCopied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4 text-slate-600 dark:text-slate-400" />}
+                  {linkCopied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4 text-gray-600 dark:text-gray-300" />}
                 </button>
               </div>
             </div>
@@ -453,7 +498,7 @@ export default function HomePage() {
 
         {/* Footer Note */}
         <div className="text-center py-3 animate-in fade-in duration-700">
-          <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center justify-center gap-1">
+          <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center justify-center gap-1">
             <Heart className="w-3 h-3 text-red-500 fill-red-500 animate-pulse" />
             Your contribution helps students prepare better
           </p>
@@ -461,13 +506,13 @@ export default function HomePage() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-slate-200/50 dark:border-slate-800/50 bg-white/50 dark:bg-slate-900/50">
+      <footer className="border-t border-gray-200/60 dark:border-gray-700/60 bg-white/60 dark:bg-gray-900/60">
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <GraduationCap className="w-4 h-4 text-primary" />
-            <span className="text-sm font-bold text-slate-700 dark:text-slate-300">PYQERA</span>
+            <span className="text-sm font-bold text-gray-700 dark:text-gray-200">PYQERA</span>
           </div>
-          <p className="text-xs text-slate-500">Built by students, for students</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">Built by students, for students</p>
         </div>
       </footer>
 
