@@ -12,7 +12,7 @@ import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 
 // Configuration
-const PORT = 3002;
+const PORT = process.env.PORT || 3002;
 const MAX_FILE_SIZE = 1.5 * 1024 * 1024 * 1024; // 1.5GB
 const SESSION_FILE = join(import.meta.dir, 'session.txt');
 
