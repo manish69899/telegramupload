@@ -23,7 +23,7 @@ interface UserFormData {
 
 // Constants
 const MAX_FILE_SIZE = 1.5 * 1024 * 1024 * 1024; // 1.5GB
-const SERVICE_URL = 'http://localhost:3002';
+const SERVICE_URL = 'https://telegram-file-upload-3gal.onrender.com';
 
 // Helpers
 function formatFileSize(bytes: number): string {
