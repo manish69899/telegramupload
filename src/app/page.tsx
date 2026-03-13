@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Moon, Sun, Upload, Shield, Zap, File, X, CheckCircle2, 
   AlertCircle, Clock, Loader2, BookOpen, FileText, 
-  GraduationCap, Lock, Cloud, type LucideIcon 
+  GraduationCap, Cloud, Send, Link as LinkIcon, MessageSquare
 } from 'lucide-react';
 
 // Types
@@ -22,12 +22,14 @@ interface UploadItem {
 
 interface UserFormData {
   name?: string;
+  link?: string;
   message?: string;
 }
 
 // Constants
 const MAX_FILE_SIZE = 1.5 * 1024 * 1024 * 1024; // 1.5GB
 const SERVICE_URL = 'https://telegram-file-upload-3gal.onrender.com';
+const TELEGRAM_USERNAME = 'your_username'; // YAHAN APNA TELEGRAM USERNAME DALO (bina @ ke)
 
 // Helpers
 function formatFileSize(bytes: number): string {
@@ -80,11 +82,9 @@ export default function HomePage() {
           setServiceStatus('ready');
         } else {
           setServiceStatus('error');
-          setError('Upload service is not ready. Check mini-service terminal.');
         }
       } catch (err) {
         setServiceStatus('error');
-        setError('Cannot connect to upload service. Make sure mini-service is running on port 3002.');
       }
     };
     checkService();
@@ -140,7 +140,7 @@ export default function HomePage() {
 
   // Upload single file
   const uploadFile = async (item: UploadItem): Promise<boolean> => {
-    const caption = `📚 PYQERA Upload\n📄 File: ${item.name}\n📊 Size: ${formatFileSize(item.size)}\n👤 Uploader: ${formData.name || 'Anonymous Student'}\n💬 Notes: ${formData.message || 'N/A'}\n🕐 Time: ${new Date().toLocaleString()}`;
+    const caption = `📚 PYQERA Contribution\n👤 By: ${formData.name || 'Anonymous Student'}\n🔗 Link: ${formData.link || 'No link provided'}\n💬 Notes: ${formData.message || 'N/A'}\n📄 File: ${item.name}\n📊 Size: ${formatFileSize(item.size)}`;
     
     const formDataToSend = new FormData();
     formDataToSend.append('file', item.file);
@@ -211,171 +211,143 @@ export default function HomePage() {
     setItems(prev => prev.filter(item => 
       item.status !== 'completed' && item.status !== 'error'
     ));
+    setFormData({}); // Clear form after completion
   };
 
   const pendingCount = items.filter(i => i.status === 'pending').length;
   const completedCount = items.filter(i => i.status === 'completed').length;
 
   return (
-    <div className="min-h-screen flex flex-col relative overflow-hidden bg-background">
+    <div className="min-h-screen flex flex-col relative overflow-hidden bg-background selection:bg-primary/20">
       
-      {/* Premium Background Elements */}
-      <div className="absolute top-0 inset-x-0 h-[500px] bg-gradient-to-b from-primary/5 via-primary/5 to-transparent pointer-events-none"></div>
-      <div className="absolute -top-40 -right-40 w-[600px] h-[600px] rounded-full bg-primary/5 blur-3xl pointer-events-none"></div>
+      {/* Premium Ambient Background */}
+      <div className="absolute top-0 inset-x-0 h-[600px] bg-gradient-to-b from-primary/10 via-background to-transparent pointer-events-none"></div>
+      <div className="absolute top-20 left-10 w-[400px] h-[400px] rounded-full bg-primary/20 blur-[100px] opacity-50 pointer-events-none mix-blend-screen dark:mix-blend-lighten"></div>
+      <div className="absolute top-40 right-10 w-[500px] h-[500px] rounded-full bg-blue-500/10 blur-[120px] opacity-50 pointer-events-none mix-blend-screen dark:mix-blend-lighten"></div>
 
-      {/* Enterprise Header */}
-      <header className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">
+      {/* Header */}
+      <header className="sticky top-0 z-50 border-b border-border/40 bg-background/70 backdrop-blur-xl supports-[backdrop-filter]:bg-background/50">
         <div className="container mx-auto px-4 lg:px-8 py-4">
           <div className="flex items-center justify-between">
-            {/* Logo Area */}
-            <div className="flex items-center gap-3 cursor-pointer">
-              <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-primary text-primary-foreground shadow-md shadow-primary/20">
+            {/* Logo */}
+            <div className="flex items-center gap-3 cursor-pointer group">
+              <div className="flex items-center justify-center w-11 h-11 rounded-xl bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-lg shadow-primary/25 group-hover:scale-105 transition-transform duration-300">
                 <GraduationCap className="w-6 h-6" />
               </div>
               <div className="flex flex-col">
-                <h1 className="text-xl font-black tracking-tight leading-none text-foreground">
+                <h1 className="text-2xl font-black tracking-tighter leading-none text-foreground">
                   PYQERA
                 </h1>
-                <span className="text-[10px] font-bold tracking-widest uppercase text-primary mt-1">
-                  Secure Vault
+                <span className="text-[10px] font-bold tracking-widest uppercase text-primary/80 mt-1">
+                  Community Portal
                 </span>
               </div>
             </div>
 
-            {/* Right Side Tools */}
-            <div className="flex items-center gap-6">
-              <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary/50 border border-border/50">
-                <div className={`w-2 h-2 rounded-full ${
-                  serviceStatus === 'checking' ? 'bg-yellow-400 animate-pulse' :
-                  serviceStatus === 'ready' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-destructive'
-                }`}></div>
-                <span className="text-xs font-medium text-muted-foreground">
-                  {serviceStatus === 'checking' && 'Connecting to Servers...'}
-                  {serviceStatus === 'ready' && 'System Operational'}
-                  {serviceStatus === 'error' && 'System Offline'}
-                </span>
-              </div>
-
-              <div className="w-px h-6 bg-border hidden md:block"></div>
-
-              <button 
-                onClick={toggleTheme} 
-                className="p-2 rounded-lg bg-secondary/50 hover:bg-secondary border border-transparent hover:border-border transition-all duration-200 text-muted-foreground hover:text-foreground"
-                aria-label="Toggle theme"
-              >
-                {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-              </button>
-            </div>
+            {/* Theme Toggle */}
+            <button 
+              onClick={toggleTheme} 
+              className="p-2.5 rounded-full bg-secondary/50 hover:bg-secondary border border-transparent hover:border-border transition-all duration-300 text-muted-foreground hover:text-foreground hover:rotate-12"
+              aria-label="Toggle theme"
+            >
+              {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+            </button>
           </div>
         </div>
       </header>
 
       {/* Main content */}
-      <main className="flex-1 container mx-auto px-4 py-12 max-w-5xl relative z-10">
+      <main className="flex-1 container mx-auto px-4 sm:px-6 py-12 lg:py-16 max-w-4xl relative z-10">
         
         {/* Hero Section */}
         <div className="text-center max-w-2xl mx-auto mb-12">
-          <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-4 text-foreground">
-            Securely upload your study materials
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 text-primary text-xs font-bold uppercase tracking-wider mb-6 border border-primary/20">
+            <BookOpen className="w-3.5 h-3.5" />
+            Contribute to the Community
+          </div>
+          <h2 className="text-4xl md:text-5xl font-extrabold tracking-tight mb-6 text-foreground leading-tight">
+            Share your Notes & <br className="hidden md:block" />
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-blue-600">Previous Year Questions</span>
           </h2>
-          <p className="text-base text-muted-foreground">
-            PYQERA provides an enterprise-grade infrastructure to store and share Previous Year Questions, lecture notes, and heavy PDF resources seamlessly.
+          <p className="text-base md:text-lg text-muted-foreground leading-relaxed">
+            Help thousands of students by sharing your study materials. Upload your files directly or share a Drive link below.
           </p>
         </div>
 
-        {/* Features Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-12">
-          <FeatureCard icon={Zap} title="Instant Sync" description="Optimized for heavy educational PDFs & resources." />
-          <FeatureCard icon={Lock} title="E2E Encrypted" description="MTProto technology protects your intellectual property." />
-          <FeatureCard icon={BookOpen} title="Limitless Storage" description="Upload entire semesters' data up to 1.5GB per file." />
-        </div>
-
-        {/* Service Alert */}
-        {serviceStatus === 'error' && (
-          <div className="mb-8 p-4 rounded-xl border-l-4 border-l-destructive bg-destructive/5 flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-semibold text-destructive">Backend Services Offline</p>
-              <p className="text-xs text-destructive/80 mt-1">
-                Please ensure the PYQERA core service is running. Execute <code className="bg-destructive/10 px-1 rounded font-mono">npm run dev</code> in the mini-services directory.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Upload Interface */}
-        <div className="rounded-2xl border border-border/60 bg-card/60 backdrop-blur-xl shadow-xl shadow-black/5 overflow-hidden">
-          <div className="p-6 md:p-10">
+        {/* Upload Interface (Premium Dropzone) */}
+        <div className="rounded-[2rem] border border-border/50 bg-card/60 backdrop-blur-2xl shadow-2xl shadow-primary/5 hover:shadow-primary/10 transition-all duration-500 overflow-hidden mb-10">
+          <div className="p-6 sm:p-10">
             
             {/* Drop zone */}
             <div
               onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
               onDragLeave={() => setIsDragging(false)}
               onDrop={handleDrop}
-              className={`relative flex flex-col items-center justify-center w-full min-h-[260px] p-8 border-2 border-dashed rounded-xl transition-all duration-200 cursor-pointer
+              className={`relative flex flex-col items-center justify-center w-full min-h-[300px] p-8 border-2 border-dashed rounded-3xl transition-all duration-300 ease-in-out cursor-pointer group overflow-hidden
                 ${isDragging 
-                  ? 'border-primary bg-primary/5' 
-                  : 'border-border hover:border-primary/40 hover:bg-secondary/30'
+                  ? 'border-primary bg-primary/10 scale-[1.02] shadow-[0_0_40px_rgba(var(--primary),0.15)]' 
+                  : 'border-border/80 hover:border-primary/50 hover:bg-primary/[0.02] hover:shadow-[0_0_30px_rgba(var(--primary),0.08)]'
                 } 
-                ${isUploading || serviceStatus !== 'ready' ? 'opacity-50 cursor-not-allowed' : ''}
+                ${isUploading || serviceStatus !== 'ready' ? 'opacity-50 cursor-not-allowed grayscale' : ''}
               `}
             >
-              <div className="p-4 rounded-full bg-secondary mb-4">
-                <Cloud className="w-8 h-8 text-primary" />
+              {/* Background glowing effect inside dropzone on hover */}
+              <div className="absolute inset-0 bg-gradient-to-b from-transparent to-primary/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+
+              <div className="relative z-10 p-6 rounded-full bg-background border shadow-sm group-hover:scale-110 group-hover:shadow-lg transition-all duration-500 mb-6">
+                <Cloud className="w-12 h-12 text-primary/70 group-hover:text-primary transition-colors duration-300" />
+                <div className="absolute -bottom-2 -right-2 p-2.5 bg-primary rounded-full shadow-lg group-hover:animate-bounce">
+                  <Upload className="w-5 h-5 text-primary-foreground" />
+                </div>
               </div>
               
-              <h3 className="text-lg font-semibold text-foreground mb-1">Select files to upload</h3>
-              <p className="text-sm text-muted-foreground mb-6">Drag and drop your PDFs, DOCXs, or ZIP files here</p>
-              
-              <div className="px-4 py-2 rounded-lg bg-primary/10 text-primary text-xs font-semibold flex items-center gap-2 border border-primary/20">
-                <Shield className="w-3.5 h-3.5" />
-                Secure MTProto Upload • Max 1.5GB
-              </div>
+              <h3 className="relative z-10 text-xl md:text-2xl font-bold text-foreground mb-2 text-center">Drag & Drop your PDFs here</h3>
+              <p className="relative z-10 text-sm md:text-base text-muted-foreground text-center mb-2">or click to browse from your device</p>
               
               <input
                 type="file"
                 multiple
                 onChange={handleFileSelect}
                 disabled={isUploading || serviceStatus !== 'ready'}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-20"
               />
             </div>
 
             {/* File list */}
             {items.length > 0 && (
-              <div className="mt-8 space-y-3">
-                <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">Staged Resources</h4>
+              <div className="mt-8 space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <h4 className="text-sm font-bold text-foreground mb-4">Selected Resources</h4>
                 {items.map(item => (
-                  <div key={item.id} className="flex items-center gap-4 p-3.5 rounded-xl border border-border/50 bg-background shadow-sm hover:shadow transition-shadow">
-                    <div className={`p-2.5 rounded-lg ${
-                      item.status === 'completed' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' :
-                      item.status === 'error' ? 'bg-destructive/10 text-destructive' :
-                      item.status === 'uploading' ? 'bg-primary/10 text-primary' :
+                  <div key={item.id} className="group flex items-center gap-4 p-4 rounded-2xl border border-border/60 bg-background/80 shadow-sm hover:shadow-md transition-all duration-300">
+                    <div className={`p-3 rounded-xl transition-colors duration-300 ${
+                      item.status === 'completed' ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' :
+                      item.status === 'error' ? 'bg-destructive/15 text-destructive' :
+                      item.status === 'uploading' ? 'bg-primary/15 text-primary' :
                       'bg-secondary text-muted-foreground'
                     }`}>
-                      {item.status === 'completed' ? <CheckCircle2 className="w-5 h-5" /> :
-                       item.status === 'error' ? <AlertCircle className="w-5 h-5" /> :
-                       item.status === 'uploading' ? <Loader2 className="w-5 h-5 animate-spin" /> :
-                       <FileText className="w-5 h-5" />}
+                      {item.status === 'completed' ? <CheckCircle2 className="w-6 h-6" /> :
+                       item.status === 'error' ? <AlertCircle className="w-6 h-6" /> :
+                       item.status === 'uploading' ? <Loader2 className="w-6 h-6 animate-spin" /> :
+                       <FileText className="w-6 h-6" />}
                     </div>
                     
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-foreground truncate">{item.name}</p>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <p className="text-xs text-muted-foreground">{formatFileSize(item.size)}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <p className="text-xs font-medium text-muted-foreground">{formatFileSize(item.size)}</p>
                         {item.status === 'uploading' && (
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-primary">Uploading...</span>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-primary animate-pulse">Uploading...</span>
                         )}
                       </div>
                       {item.status === 'error' && (
-                        <p className="text-xs text-destructive mt-1">{item.error}</p>
+                        <p className="text-xs font-medium text-destructive mt-1.5 bg-destructive/10 inline-block px-2 py-0.5 rounded">{item.error}</p>
                       )}
                     </div>
                     
                     {!isUploading && (
                       <button 
                         onClick={() => removeItem(item.id)} 
-                        className="p-2 hover:bg-destructive/10 text-muted-foreground hover:text-destructive rounded-lg transition-colors"
+                        className="p-2.5 hover:bg-destructive hover:text-destructive-foreground rounded-full transition-all duration-200 text-muted-foreground opacity-60 group-hover:opacity-100"
                       >
                         <X className="w-4 h-4" />
                       </button>
@@ -385,28 +357,45 @@ export default function HomePage() {
               </div>
             )}
 
-            {/* Form Details */}
+            {/* Contribution Details Form */}
             {!isUploading && items.length > 0 && pendingCount > 0 && (
-              <div className="mt-8 pt-8 border-t border-border/50">
-                <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-4">Resource Meta-Data</h4>
-                <div className="grid gap-5 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold text-foreground">Uploader Alias (Optional)</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Rahul - Sem 3 IT"
-                      value={formData.name || ''}
-                      onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                      className="w-full px-4 py-2.5 rounded-lg border border-input bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
-                    />
+              <div className="mt-8 pt-8 border-t border-border/50 animate-in fade-in duration-500">
+                <h4 className="text-sm font-bold text-foreground mb-5">Contribution Details</h4>
+                <div className="space-y-5">
+                  
+                  <div className="grid gap-5 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider ml-1">Your Name (Optional)</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Aryan - BCA 2nd Sem"
+                        value={formData.name || ''}
+                        onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                        className="w-full px-4 py-3.5 rounded-xl border border-border/60 bg-background/50 focus:bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm shadow-sm"
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider ml-1 flex items-center gap-1.5">
+                        <LinkIcon className="w-3.5 h-3.5" /> External Link (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Paste Google Drive / Dropbox link here"
+                        value={formData.link || ''}
+                        onChange={(e) => setFormData(prev => ({ ...prev, link: e.target.value }))}
+                        className="w-full px-4 py-3.5 rounded-xl border border-border/60 bg-background/50 focus:bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm shadow-sm"
+                      />
+                    </div>
                   </div>
+
                   <div className="space-y-2">
-                    <label className="text-xs font-semibold text-foreground">Resource Details</label>
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider ml-1">About these files</label>
                     <textarea
-                      placeholder="e.g. Operating Systems Chapter 4 Notes + PYQs..."
+                      placeholder="Which subject/year are these notes from?"
                       value={formData.message || ''}
                       onChange={(e) => setFormData(prev => ({ ...prev, message: e.target.value }))}
-                      className="w-full px-4 py-2.5 rounded-lg border border-input bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm resize-none"
+                      className="w-full px-4 py-3.5 rounded-xl border border-border/60 bg-background/50 focus:bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm shadow-sm resize-none"
                       rows={2}
                     />
                   </div>
@@ -414,13 +403,13 @@ export default function HomePage() {
               </div>
             )}
 
-            {/* Actions Block */}
+            {/* Upload Actions */}
             {items.length > 0 && (
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-8 pt-6 border-t border-border/50">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-8 pt-8 border-t border-border/50">
                 {completedCount > 0 ? (
                   <button 
                     onClick={clearCompleted} 
-                    className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-secondary rounded-lg transition-colors"
+                    className="w-full sm:w-auto px-6 py-3 text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-secondary rounded-xl transition-colors"
                   >
                     Clear History
                   </button>
@@ -430,69 +419,59 @@ export default function HomePage() {
                   <button
                     onClick={startUpload}
                     disabled={serviceStatus !== 'ready'}
-                    className="w-full sm:w-auto px-6 py-2.5 text-sm font-semibold text-primary-foreground bg-primary hover:bg-primary/90 rounded-lg shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    className="w-full sm:w-auto px-8 py-3.5 text-sm font-bold text-primary-foreground bg-primary hover:bg-primary/90 rounded-xl shadow-xl shadow-primary/25 hover:shadow-primary/40 hover:-translate-y-0.5 transition-all duration-300 disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none flex items-center justify-center gap-2"
                   >
-                    <Upload className="w-4 h-4" />
-                    Secure Upload ({pendingCount})
+                    <Send className="w-4 h-4" />
+                    Submit Files ({pendingCount})
                   </button>
                 )}
               </div>
             )}
           </div>
         </div>
+
+        {/* Direct Telegram Contact Card (New Section) */}
+        <div className="rounded-[2rem] bg-gradient-to-br from-blue-500/10 to-primary/5 border border-blue-500/20 p-8 text-center relative overflow-hidden group">
+          {/* Decorative background glow */}
+          <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-2xl group-hover:bg-blue-500/20 transition-all duration-500"></div>
+          
+          <div className="relative z-10 flex flex-col items-center">
+            <div className="p-3 bg-blue-500/10 text-blue-500 rounded-full mb-4">
+              <MessageSquare className="w-6 h-6" />
+            </div>
+            <h3 className="text-xl font-bold text-foreground mb-2">Have a Google Drive link to share?</h3>
+            <p className="text-sm text-muted-foreground mb-6 max-w-md">
+              If you don't want to upload files directly, you can easily send us your Google Drive or Dropbox links via Telegram. We are highly active there!
+            </p>
+            <a 
+              href={`https://t.me/${TELEGRAM_USERNAME}`} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-6 py-3 bg-[#0088cc] hover:bg-[#007ab8] text-white text-sm font-bold rounded-xl shadow-lg shadow-[#0088cc]/30 hover:shadow-[#0088cc]/50 hover:-translate-y-0.5 transition-all duration-300"
+            >
+              <Send className="w-4 h-4" />
+              Direct Message on Telegram
+            </a>
+          </div>
+        </div>
       </main>
 
-      {/* Professional Corporate Footer */}
-      <footer className="border-t border-border/50 bg-card mt-auto z-10">
-        <div className="container mx-auto px-4 lg:px-8 py-10">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
-            <div className="md:col-span-2">
-              <div className="flex items-center gap-2 mb-4">
-                <GraduationCap className="w-5 h-5 text-primary" />
-                <h3 className="text-lg font-black tracking-tight text-foreground">PYQERA</h3>
-              </div>
-              <p className="text-sm text-muted-foreground leading-relaxed max-w-sm">
-                Empowering learners with high-quality previous year questions, notes, and study materials. Our Secure Vault utilizes enterprise-grade MTProto technology to ensure your educational resources are stored safely and accessible instantly.
-              </p>
-            </div>
-            <div>
-              <h4 className="font-semibold text-foreground mb-4">Resources</h4>
-              <ul className="space-y-2 text-sm text-muted-foreground">
-                <li className="hover:text-primary cursor-pointer transition-colors">Study Materials</li>
-                <li className="hover:text-primary cursor-pointer transition-colors">University PYQs</li>
-                <li className="hover:text-primary cursor-pointer transition-colors">Notes & More</li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="font-semibold text-foreground mb-4">Company</h4>
-              <ul className="space-y-2 text-sm text-muted-foreground">
-                <li className="hover:text-primary cursor-pointer transition-colors">About Us</li>
-                <li className="hover:text-primary cursor-pointer transition-colors">Contact Support</li>
-                <li className="hover:text-primary cursor-pointer transition-colors">System Status</li>
-              </ul>
-            </div>
+      {/* Footer */}
+      <footer className="border-t border-border/30 bg-background/50 mt-auto z-10">
+        <div className="container mx-auto px-4 lg:px-8 py-8 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <GraduationCap className="w-5 h-5 text-primary" />
+            <span className="text-sm font-bold text-foreground tracking-tight">PYQERA</span>
           </div>
-          
-          <div className="pt-8 border-t border-border/50 flex flex-col md:flex-row items-center justify-between gap-4">
-            <p className="text-xs text-muted-foreground">
-              © {new Date().getFullYear()} PYQERA Technologies. All rights reserved.
-            </p>
- 
+          <p className="text-xs text-muted-foreground font-medium text-center md:text-left">
+            Built by students, for students. Share knowledge, grow together.
+          </p>
+          <div className="flex gap-4 text-xs font-semibold text-muted-foreground">
+            <span className="hover:text-primary cursor-pointer transition-colors">Privacy</span>
+            <span className="hover:text-primary cursor-pointer transition-colors">Terms</span>
           </div>
         </div>
       </footer>
-    </div>
-  );
-}
-
-function FeatureCard({ icon: Icon, title, description }: { icon: LucideIcon; title: string; description: string }) {
-  return (
-    <div className="flex flex-col p-5 rounded-2xl bg-card border border-border/50 hover:border-primary/30 transition-colors">
-      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-4">
-        <Icon className="w-5 h-5 text-primary" />
-      </div>
-      <h3 className="text-sm font-bold text-foreground mb-1">{title}</h3>
-      <p className="text-xs text-muted-foreground leading-relaxed">{description}</p>
     </div>
   );
 }
