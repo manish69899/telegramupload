@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { 
-  Moon, Sun, Upload, Shield, Zap, File, X, CheckCircle2, 
-  AlertCircle, Clock, Loader2, BookOpen, FileText, 
-  GraduationCap, Cloud, Send, Link as LinkIcon, MessageSquare
+  Moon, Sun, Upload, X, CheckCircle2, 
+  AlertCircle, Loader2, FileText, 
+  GraduationCap, Send, Link as LinkIcon, MessageSquare,
+  Heart, Copy, Check, XCircle, FolderOpen, Sparkles, Zap, MessageCircle
 } from 'lucide-react';
 
 // Types
@@ -17,19 +18,29 @@ interface UploadItem {
   size: number;
   status: UploadStatus;
   progress: number;
+  description?: string;
+  error?: string;
+}
+
+interface LinkItem {
+  id: string;
+  url: string;
+  description: string;
+  status: UploadStatus;
   error?: string;
 }
 
 interface UserFormData {
   name?: string;
-  link?: string;
   message?: string;
 }
 
-// Constants
-const MAX_FILE_SIZE = 1.5 * 1024 * 1024 * 1024; // 1.5GB
+// ============================================
+// 🔧 CONFIGURATION
+// ============================================
+const TELEGRAM_USERNAME = 'your_username'; // Bina @ ke username
 const SERVICE_URL = 'https://telegram-file-upload-3gal.onrender.com';
-const TELEGRAM_USERNAME = 'your_username'; // YAHAN APNA TELEGRAM USERNAME DALO (bina @ ke)
+// ============================================
 
 // Helpers
 function formatFileSize(bytes: number): string {
@@ -44,24 +55,28 @@ function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2);
 }
 
-// Main Page Component
+function getInitialTheme(): 'light' | 'dark' {
+  if (typeof window === 'undefined') return 'light';
+  const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  if (isDark) document.documentElement.classList.add('dark');
+  return isDark ? 'dark' : 'light';
+}
+
+// Main Component
 export default function HomePage() {
   const [items, setItems] = useState<UploadItem[]>([]);
+  const [linkItems, setLinkItems] = useState<LinkItem[]>([]);
+  const [newLink, setNewLink] = useState('');
+  const [newLinkDesc, setNewLinkDesc] = useState('');
   const [isUploading, setIsUploading] = useState(false);
-  const [serviceStatus, setServiceStatus] = useState<'checking' | 'ready' | 'error'>('checking');
   const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState<UserFormData>({});
   const [isDragging, setIsDragging] = useState(false);
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => getInitialTheme());
+  const [activeTab, setActiveTab] = useState<'files' | 'links'>('files');
+  const [linkCopied, setLinkCopied] = useState(false);
+  const [expandedDesc, setExpandedDesc] = useState<string | null>(null);
 
-  // Check system theme
-  useEffect(() => {
-    const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    setTheme(isDark ? 'dark' : 'light');
-    if (isDark) document.documentElement.classList.add('dark');
-  }, []);
-
-  // Toggle theme
   const toggleTheme = () => {
     const newTheme = theme === 'dark' ? 'light' : 'dark';
     setTheme(newTheme);
@@ -72,406 +87,410 @@ export default function HomePage() {
     }
   };
 
-  // Check service status
-  useEffect(() => {
-    const checkService = async () => {
-      try {
-        const response = await fetch(`${SERVICE_URL}/`);
-        const data = await response.json();
-        if (data.success && data.status === 'ready') {
-          setServiceStatus('ready');
-        } else {
-          setServiceStatus('error');
-        }
-      } catch (err) {
-        setServiceStatus('error');
-      }
-    };
-    checkService();
-    const interval = setInterval(checkService, 5000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Add files
   const addFiles = useCallback((files: File[]) => {
     setError(null);
     for (const file of files) {
-      if (file.size > MAX_FILE_SIZE) {
-        setError(`File ${file.name} exceeds 1.5GB limit`);
-        continue;
-      }
       if (file.size === 0) {
-        setError(`File ${file.name} is empty`);
+        setError(`${file.name} is empty`);
         continue;
       }
-
       setItems(prev => {
-        if (prev.some(item => item.name === file.name && item.size === file.size)) {
-          return prev;
-        }
-        return [...prev, {
-          id: generateId(),
-          file,
-          name: file.name,
-          size: file.size,
-          status: 'pending',
-          progress: 0,
-        }];
+        if (prev.some(item => item.name === file.name && item.size === file.size)) return prev;
+        return [...prev, { id: generateId(), file, name: file.name, size: file.size, status: 'pending', progress: 0 }];
       });
     }
   }, []);
 
-  // Handle file drop
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    if (isUploading) return;
     const files = Array.from(e.dataTransfer.files);
     addFiles(files);
-  }, [isUploading, addFiles]);
+  }, [addFiles]);
 
-  // Handle file select
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    if (isUploading) return;
     const files = Array.from(e.target.files || []);
     addFiles(files);
     e.target.value = '';
-  }, [isUploading, addFiles]);
+  }, [addFiles]);
 
-  // Upload single file
+  const updateItemDescription = (id: string, description: string) => {
+    setItems(prev => prev.map(item => item.id === id ? { ...item, description } : item));
+  };
+
+  const addLink = () => {
+    if (!newLink.trim()) return;
+    try { new URL(newLink); } catch { setError('Invalid URL'); return; }
+    setLinkItems(prev => [...prev, { id: generateId(), url: newLink, description: newLinkDesc, status: 'pending' }]);
+    setNewLink('');
+    setNewLinkDesc('');
+    setError(null);
+  };
+
   const uploadFile = async (item: UploadItem): Promise<boolean> => {
-    const caption = `📚 PYQERA Contribution\n👤 By: ${formData.name || 'Anonymous Student'}\n🔗 Link: ${formData.link || 'No link provided'}\n💬 Notes: ${formData.message || 'N/A'}\n📄 File: ${item.name}\n📊 Size: ${formatFileSize(item.size)}`;
-    
+    const caption = `📚 PYQERA\n👤 ${formData.name || 'Anonymous'}\n💬 ${formData.message || 'N/A'}\n📄 ${item.name}\n📝 ${item.description || 'No description'}\n📊 ${formatFileSize(item.size)}`;
     const formDataToSend = new FormData();
     formDataToSend.append('file', item.file);
     formDataToSend.append('fileName', item.name);
     formDataToSend.append('caption', caption);
 
     try {
-      const response = await fetch(`${SERVICE_URL}/upload`, {
-        method: 'POST',
-        headers: {
-          'X-Upload-Id': item.id,
-        },
-        body: formDataToSend,
-      });
-
+      const response = await fetch(`${SERVICE_URL}/upload`, { method: 'POST', headers: { 'X-Upload-Id': item.id }, body: formDataToSend });
       const result = await response.json();
-
       if (result.success) {
-        setItems(prev => prev.map(i => 
-          i.id === item.id ? { ...i, status: 'completed', progress: 100 } : i
-        ));
+        setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'completed', progress: 100 } : i));
         return true;
-      } else {
-        setItems(prev => prev.map(i => 
-          i.id === item.id ? { ...i, status: 'error', error: result.error || 'Upload failed' } : i
-        ));
-        return false;
       }
-    } catch (err) {
-      setItems(prev => prev.map(i => 
-        i.id === item.id ? { ...i, status: 'error', error: 'Network connection failed' } : i
-      ));
+      setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'error', error: result.error || 'Failed' } : i));
+      return false;
+    } catch {
+      setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'error', error: 'Network error' } : i));
       return false;
     }
   };
 
-  // Start upload
-  const startUpload = async () => {
-    if (isUploading || serviceStatus !== 'ready') return;
+  const submitLink = async (item: LinkItem): Promise<boolean> => {
+    const caption = `📚 PYQERA Link\n👤 ${formData.name || 'Anonymous'}\n💬 ${formData.message || 'N/A'}\n🔗 ${item.url}\n📝 ${item.description || 'N/A'}`;
+    try {
+      const response = await fetch(`${SERVICE_URL}/upload-link`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ caption, url: item.url }) });
+      const result = await response.json();
+      if (result.success) {
+        setLinkItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'completed' } : i));
+        return true;
+      }
+      setLinkItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'error', error: result.error || 'Failed' } : i));
+      return false;
+    } catch {
+      setLinkItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'error', error: 'Network error' } : i));
+      return false;
+    }
+  };
 
-    const pendingItems = items.filter(item => item.status === 'pending');
-    if (pendingItems.length === 0) return;
+  const startUpload = async () => {
+    const pendingFiles = items.filter(item => item.status === 'pending');
+    const pendingLinks = linkItems.filter(item => item.status === 'pending');
+    if (pendingFiles.length === 0 && pendingLinks.length === 0) return;
 
     setIsUploading(true);
     setError(null);
 
-    setItems(prev => prev.map(item => 
-      item.status === 'pending' ? { ...item, status: 'uploading' } : item
-    ));
-
-    for (const item of pendingItems) {
-      setItems(prev => prev.map(i => 
-        i.id === item.id ? { ...i, status: 'uploading' } : i
-      ));
+    for (const item of pendingFiles) {
+      setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'uploading' } : i));
       await uploadFile(item);
+    }
+    for (const item of pendingLinks) {
+      setLinkItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'uploading' } : i));
+      await submitLink(item);
     }
 
     setIsUploading(false);
   };
 
-  // Remove item
-  const removeItem = (id: string) => {
-    setItems(prev => prev.filter(item => item.id !== id));
-  };
-
-  // Clear completed
+  const removeItem = (id: string) => setItems(prev => prev.filter(item => item.id !== id));
+  const removeLink = (id: string) => setLinkItems(prev => prev.filter(item => item.id !== id));
   const clearCompleted = () => {
-    setItems(prev => prev.filter(item => 
-      item.status !== 'completed' && item.status !== 'error'
-    ));
-    setFormData({}); // Clear form after completion
+    setItems(prev => prev.filter(item => item.status !== 'completed' && item.status !== 'error'));
+    setLinkItems(prev => prev.filter(item => item.status !== 'completed' && item.status !== 'error'));
+    setFormData({});
   };
 
-  const pendingCount = items.filter(i => i.status === 'pending').length;
-  const completedCount = items.filter(i => i.status === 'completed').length;
+  const copyTelegramLink = () => {
+    navigator.clipboard.writeText(`https://t.me/${TELEGRAM_USERNAME}`);
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 2000);
+  };
+
+  const pendingFiles = items.filter(i => i.status === 'pending').length;
+  const pendingLinks = linkItems.filter(i => i.status === 'pending').length;
+  const totalPending = pendingFiles + pendingLinks;
+  const totalItems = items.length + linkItems.length;
+  const completedItems = items.filter(i => i.status === 'completed').length + linkItems.filter(i => i.status === 'completed').length;
+  const uploadingItems = items.filter(i => i.status === 'uploading').length + linkItems.filter(i => i.status === 'uploading').length;
 
   return (
-    <div className="min-h-screen flex flex-col relative overflow-hidden bg-background selection:bg-primary/20">
+    <div className="min-h-screen flex flex-col bg-gradient-to-br from-slate-50 via-white to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 selection:bg-primary/20 transition-colors duration-500">
       
-      {/* Premium Ambient Background */}
-      <div className="absolute top-0 inset-x-0 h-[600px] bg-gradient-to-b from-primary/10 via-background to-transparent pointer-events-none"></div>
-      <div className="absolute top-20 left-10 w-[400px] h-[400px] rounded-full bg-primary/20 blur-[100px] opacity-50 pointer-events-none mix-blend-screen dark:mix-blend-lighten"></div>
-      <div className="absolute top-40 right-10 w-[500px] h-[500px] rounded-full bg-blue-500/10 blur-[120px] opacity-50 pointer-events-none mix-blend-screen dark:mix-blend-lighten"></div>
+      {/* Animated Background */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-40 -right-40 w-80 h-80 bg-gradient-to-br from-primary/20 to-blue-500/20 rounded-full blur-3xl animate-pulse" style={{ animationDuration: '4s' }} />
+        <div className="absolute top-1/2 -left-40 w-96 h-96 bg-gradient-to-br from-purple-500/10 to-primary/10 rounded-full blur-3xl animate-pulse" style={{ animationDuration: '6s' }} />
+        <div className="absolute -bottom-40 right-1/3 w-80 h-80 bg-gradient-to-br from-blue-500/10 to-primary/15 rounded-full blur-3xl animate-pulse" style={{ animationDuration: '5s' }} />
+      </div>
 
       {/* Header */}
-      <header className="sticky top-0 z-50 border-b border-border/40 bg-background/70 backdrop-blur-xl supports-[backdrop-filter]:bg-background/50">
-        <div className="container mx-auto px-4 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            {/* Logo */}
-            <div className="flex items-center gap-3 cursor-pointer group">
-              <div className="flex items-center justify-center w-11 h-11 rounded-xl bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-lg shadow-primary/25 group-hover:scale-105 transition-transform duration-300">
-                <GraduationCap className="w-6 h-6" />
-              </div>
-              <div className="flex flex-col">
-                <h1 className="text-2xl font-black tracking-tighter leading-none text-foreground">
-                  PYQERA
-                </h1>
-                <span className="text-[10px] font-bold tracking-widest uppercase text-primary/80 mt-1">
-                  Community Portal
-                </span>
-              </div>
+      <header className="sticky top-0 z-50 border-b border-slate-200/50 dark:border-slate-800/50 bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2.5 group">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center shadow-lg shadow-primary/20 group-hover:shadow-primary/40 group-hover:scale-105 transition-all duration-300">
+              <GraduationCap className="w-5 h-5 text-white" />
             </div>
-
-            {/* Theme Toggle */}
-            <button 
-              onClick={toggleTheme} 
-              className="p-2.5 rounded-full bg-secondary/50 hover:bg-secondary border border-transparent hover:border-border transition-all duration-300 text-muted-foreground hover:text-foreground hover:rotate-12"
-              aria-label="Toggle theme"
-            >
-              {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-            </button>
+            <div>
+              <h1 className="text-lg font-black tracking-tight text-slate-900 dark:text-white">PYQERA</h1>
+              <p className="text-[9px] font-bold uppercase tracking-widest text-primary/80">Community</p>
+            </div>
           </div>
+          
+          <button onClick={toggleTheme} className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:scale-110 hover:rotate-12 transition-all duration-300 text-slate-600 dark:text-slate-400">
+            {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+          </button>
         </div>
       </header>
 
-      {/* Main content */}
-      <main className="flex-1 container mx-auto px-4 sm:px-6 py-12 lg:py-16 max-w-4xl relative z-10">
+      {/* Main Content */}
+      <main className="flex-1 max-w-6xl mx-auto w-full px-4 py-6">
         
-        {/* Hero Section */}
-        <div className="text-center max-w-2xl mx-auto mb-12">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 text-primary text-xs font-bold uppercase tracking-wider mb-6 border border-primary/20">
-            <BookOpen className="w-3.5 h-3.5" />
-            Contribute to the Community
+        {/* Hero */}
+        <div className="text-center mb-6 animate-in fade-in slide-in-from-top-4 duration-700">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold uppercase tracking-wider mb-3 border border-primary/20">
+            <Sparkles className="w-3 h-3" />
+            Share & Help Students
           </div>
-          <h2 className="text-4xl md:text-5xl font-extrabold tracking-tight mb-6 text-foreground leading-tight">
-            Share your Notes & <br className="hidden md:block" />
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-blue-600">Previous Year Questions</span>
+          <h2 className="text-2xl sm:text-3xl md:text-4xl font-black text-slate-900 dark:text-white mb-2">
+            Upload Notes & <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-blue-600">PYQs</span>
           </h2>
-          <p className="text-base md:text-lg text-muted-foreground leading-relaxed">
-            Help thousands of students by sharing your study materials. Upload your files directly or share a Drive link below.
-          </p>
+          <p className="text-sm text-slate-600 dark:text-slate-400 max-w-lg mx-auto">Help thousands of students by sharing your study materials</p>
         </div>
 
-        {/* Upload Interface (Premium Dropzone) */}
-        <div className="rounded-[2rem] border border-border/50 bg-card/60 backdrop-blur-2xl shadow-2xl shadow-primary/5 hover:shadow-primary/10 transition-all duration-500 overflow-hidden mb-10">
-          <div className="p-6 sm:p-10">
+        {/* Two Options Grid */}
+        <div className="grid lg:grid-cols-2 gap-4 mb-4">
+          
+          {/* Option 1: Website Upload */}
+          <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-2xl border border-slate-200/50 dark:border-slate-800/50 shadow-xl shadow-slate-200/50 dark:shadow-black/20 overflow-hidden animate-in fade-in slide-in-from-left-4 duration-700">
             
-            {/* Drop zone */}
-            <div
-              onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-              onDragLeave={() => setIsDragging(false)}
-              onDrop={handleDrop}
-              className={`relative flex flex-col items-center justify-center w-full min-h-[300px] p-8 border-2 border-dashed rounded-3xl transition-all duration-300 ease-in-out cursor-pointer group overflow-hidden
-                ${isDragging 
-                  ? 'border-primary bg-primary/10 scale-[1.02] shadow-[0_0_40px_rgba(var(--primary),0.15)]' 
-                  : 'border-border/80 hover:border-primary/50 hover:bg-primary/[0.02] hover:shadow-[0_0_30px_rgba(var(--primary),0.08)]'
-                } 
-                ${isUploading || serviceStatus !== 'ready' ? 'opacity-50 cursor-not-allowed grayscale' : ''}
-              `}
-            >
-              {/* Background glowing effect inside dropzone on hover */}
-              <div className="absolute inset-0 bg-gradient-to-b from-transparent to-primary/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-
-              <div className="relative z-10 p-6 rounded-full bg-background border shadow-sm group-hover:scale-110 group-hover:shadow-lg transition-all duration-500 mb-6">
-                <Cloud className="w-12 h-12 text-primary/70 group-hover:text-primary transition-colors duration-300" />
-                <div className="absolute -bottom-2 -right-2 p-2.5 bg-primary rounded-full shadow-lg group-hover:animate-bounce">
-                  <Upload className="w-5 h-5 text-primary-foreground" />
-                </div>
-              </div>
-              
-              <h3 className="relative z-10 text-xl md:text-2xl font-bold text-foreground mb-2 text-center">Drag & Drop your PDFs here</h3>
-              <p className="relative z-10 text-sm md:text-base text-muted-foreground text-center mb-2">or click to browse from your device</p>
-              
-              <input
-                type="file"
-                multiple
-                onChange={handleFileSelect}
-                disabled={isUploading || serviceStatus !== 'ready'}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-20"
-              />
+            {/* Tab Header */}
+            <div className="flex border-b border-slate-200/50 dark:border-slate-800/50">
+              <button onClick={() => setActiveTab('files')} className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm font-semibold transition-all relative ${activeTab === 'files' ? 'text-primary' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>
+                <Upload className="w-4 h-4" />
+                Files {items.length > 0 && <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-primary text-white">{items.length}</span>}
+                {activeTab === 'files' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />}
+              </button>
+              <button onClick={() => setActiveTab('links')} className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm font-semibold transition-all relative ${activeTab === 'links' ? 'text-primary' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>
+                <LinkIcon className="w-4 h-4" />
+                Links {linkItems.length > 0 && <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-primary text-white">{linkItems.length}</span>}
+                {activeTab === 'links' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />}
+              </button>
             </div>
 
-            {/* File list */}
-            {items.length > 0 && (
-              <div className="mt-8 space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <h4 className="text-sm font-bold text-foreground mb-4">Selected Resources</h4>
-                {items.map(item => (
-                  <div key={item.id} className="group flex items-center gap-4 p-4 rounded-2xl border border-border/60 bg-background/80 shadow-sm hover:shadow-md transition-all duration-300">
-                    <div className={`p-3 rounded-xl transition-colors duration-300 ${
-                      item.status === 'completed' ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' :
-                      item.status === 'error' ? 'bg-destructive/15 text-destructive' :
-                      item.status === 'uploading' ? 'bg-primary/15 text-primary' :
-                      'bg-secondary text-muted-foreground'
-                    }`}>
-                      {item.status === 'completed' ? <CheckCircle2 className="w-6 h-6" /> :
-                       item.status === 'error' ? <AlertCircle className="w-6 h-6" /> :
-                       item.status === 'uploading' ? <Loader2 className="w-6 h-6 animate-spin" /> :
-                       <FileText className="w-6 h-6" />}
+            <div className="p-4">
+              {/* Files Tab */}
+              {activeTab === 'files' && (
+                <div className="space-y-3">
+                  {/* Drop Zone */}
+                  <div
+                    onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                    onDragLeave={() => setIsDragging(false)}
+                    onDrop={handleDrop}
+                    className={`relative border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all duration-300 group ${isDragging ? 'border-primary bg-primary/5 scale-[1.01]' : 'border-slate-300 dark:border-slate-700 hover:border-primary/50 hover:bg-slate-50 dark:hover:bg-slate-800/50'}`}
+                  >
+                    <div className="w-12 h-12 mx-auto mb-2 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center group-hover:scale-110 group-hover:bg-primary/10 transition-all duration-300">
+                      <FolderOpen className="w-6 h-6 text-slate-400 group-hover:text-primary transition-colors" />
                     </div>
-                    
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-foreground truncate">{item.name}</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <p className="text-xs font-medium text-muted-foreground">{formatFileSize(item.size)}</p>
-                        {item.status === 'uploading' && (
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-primary animate-pulse">Uploading...</span>
-                        )}
-                      </div>
-                      {item.status === 'error' && (
-                        <p className="text-xs font-medium text-destructive mt-1.5 bg-destructive/10 inline-block px-2 py-0.5 rounded">{item.error}</p>
-                      )}
+                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">Drop files or click</p>
+                    <p className="text-xs text-slate-500 mt-0.5">PDF, Images, Docs supported</p>
+                    <input type="file" multiple onChange={handleFileSelect} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                  </div>
+
+                  {/* Files List */}
+                  {items.length > 0 && (
+                    <div className="max-h-48 overflow-y-auto space-y-2 pr-1 custom-scrollbar animate-in fade-in duration-300">
+                      {items.map((item, idx) => (
+                        <div key={item.id} className="bg-slate-50 dark:bg-slate-800/50 rounded-lg overflow-hidden group animate-in slide-in-from-right-2 duration-300" style={{ animationDelay: `${idx * 50}ms` }}>
+                          {/* File Row */}
+                          <div className="flex items-center gap-2 p-2">
+                            <span className="w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-600 dark:text-slate-400 flex-shrink-0">{idx + 1}</span>
+                            <div className={`p-1.5 rounded-lg flex-shrink-0 ${item.status === 'completed' ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600' : item.status === 'error' ? 'bg-red-100 dark:bg-red-900/30 text-red-600' : item.status === 'uploading' ? 'bg-primary/10 text-primary' : 'bg-slate-200 dark:bg-slate-700 text-slate-500'}`}>
+                              {item.status === 'completed' ? <CheckCircle2 className="w-3.5 h-3.5" /> : item.status === 'error' ? <AlertCircle className="w-3.5 h-3.5" /> : item.status === 'uploading' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate">{item.name}</p>
+                              <div className="flex items-center gap-2">
+                                <p className="text-[10px] text-slate-500">{formatFileSize(item.size)}</p>
+                                {item.description && <p className="text-[10px] text-primary truncate">• {item.description}</p>}
+                              </div>
+                            </div>
+                            
+                            {/* Action Buttons */}
+                            {item.status === 'pending' && (
+                              <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button 
+                                  onClick={() => setExpandedDesc(expandedDesc === item.id ? null : item.id)} 
+                                  className={`p-1 rounded transition-all ${expandedDesc === item.id ? 'bg-primary/10 text-primary' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-primary'}`}
+                                  title="Add description"
+                                >
+                                  <MessageCircle className="w-3.5 h-3.5" />
+                                </button>
+                                <button onClick={() => removeItem(item.id)} className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-slate-400 hover:text-red-500 transition-all">
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                          
+                          {/* Description Input (Expandable) */}
+                          {expandedDesc === item.id && item.status === 'pending' && (
+                            <div className="px-2 pb-2 pt-0 animate-in fade-in slide-in-from-top-2 duration-200">
+                              <input
+                                type="text"
+                                placeholder="e.g., BCA 3rd Sem Computer Networks"
+                                value={item.description || ''}
+                                onChange={(e) => updateItemDescription(item.id, e.target.value)}
+                                className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 focus:ring-1 focus:ring-primary/30 focus:border-primary outline-none transition-all"
+                                autoFocus
+                              />
+                            </div>
+                          )}
+                        </div>
+                      ))}
                     </div>
-                    
-                    {!isUploading && (
-                      <button 
-                        onClick={() => removeItem(item.id)} 
-                        className="p-2.5 hover:bg-destructive hover:text-destructive-foreground rounded-full transition-all duration-200 text-muted-foreground opacity-60 group-hover:opacity-100"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    )}
+                  )}
+                </div>
+              )}
+
+              {/* Links Tab */}
+              {activeTab === 'links' && (
+                <div className="space-y-3">
+                  <div className="flex gap-2">
+                    <input type="text" placeholder="Paste any cloud link..." value={newLink} onChange={(e) => setNewLink(e.target.value)} className="flex-1 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all" />
+                    <button onClick={addLink} disabled={!newLink.trim()} className="px-4 py-2 bg-primary hover:bg-primary/90 text-white text-sm font-semibold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:scale-105 active:scale-95">
+                      <Zap className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <input type="text" placeholder="Description (optional)" value={newLinkDesc} onChange={(e) => setNewLinkDesc(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all" />
+
+                  {/* Links List */}
+                  {linkItems.length > 0 && (
+                    <div className="max-h-32 overflow-y-auto space-y-1.5 animate-in fade-in duration-300">
+                      {linkItems.map((item, idx) => (
+                        <div key={item.id} className="flex items-center gap-2 p-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 group animate-in slide-in-from-right-2 duration-300" style={{ animationDelay: `${idx * 50}ms` }}>
+                          <span className="w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-600 dark:text-slate-400">{idx + 1}</span>
+                          <div className={`p-1.5 rounded-lg ${item.status === 'completed' ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600' : item.status === 'error' ? 'bg-red-100 dark:bg-red-900/30 text-red-600' : item.status === 'uploading' ? 'bg-primary/10 text-primary' : 'bg-slate-200 dark:bg-slate-700 text-slate-500'}`}>
+                            {item.status === 'completed' ? <CheckCircle2 className="w-3.5 h-3.5" /> : item.status === 'error' ? <AlertCircle className="w-3.5 h-3.5" /> : item.status === 'uploading' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LinkIcon className="w-3.5 h-3.5" />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium text-primary truncate">{item.url.length > 35 ? item.url.substring(0, 35) + '...' : item.url}</p>
+                            {item.description && <p className="text-[10px] text-slate-500 truncate">{item.description}</p>}
+                          </div>
+                          {item.status === 'pending' && <button onClick={() => removeLink(item.id)} className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"><X className="w-3.5 h-3.5" /></button>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* User Details & Submit */}
+              {totalItems > 0 && (
+                <div className="mt-3 pt-3 border-t border-slate-200/50 dark:border-slate-800/50 animate-in fade-in duration-300">
+                  <div className="flex gap-2 mb-3">
+                    <input type="text" placeholder="Your name (optional)" value={formData.name || ''} onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))} className="flex-1 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all" />
+                    <input type="text" placeholder="Subject/Semester" value={formData.message || ''} onChange={(e) => setFormData(prev => ({ ...prev, message: e.target.value }))} className="flex-1 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all" />
+                  </div>
+                  
+                  {/* Stats Bar */}
+                  <div className="flex items-center justify-between mb-3 px-1">
+                    <div className="flex items-center gap-3 text-xs text-slate-500">
+                      {totalItems > 0 && <span>{totalItems} total</span>}
+                      {completedItems > 0 && <span className="text-emerald-600">{completedItems} done</span>}
+                      {uploadingItems > 0 && <span className="text-primary">{uploadingItems} uploading</span>}
+                    </div>
+                    {completedItems > 0 && <button onClick={clearCompleted} className="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">Clear done</button>}
+                  </div>
+
+                  {/* Submit Button */}
+                  {totalPending > 0 && (
+                    <button onClick={startUpload} className="w-full py-2.5 bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 text-white text-sm font-bold rounded-xl shadow-lg shadow-primary/20 hover:shadow-primary/30 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-300 flex items-center justify-center gap-2 animate-in fade-in duration-300">
+                      <Send className="w-4 h-4" />
+                      Submit {totalPending} {totalPending === 1 ? 'item' : 'items'}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Option 2: Telegram */}
+          <div className="bg-gradient-to-br from-[#0088cc]/10 via-[#0088cc]/5 to-blue-500/5 dark:from-[#0088cc]/20 dark:via-[#0088cc]/10 dark:to-blue-500/10 rounded-2xl border border-[#0088cc]/20 p-5 relative overflow-hidden animate-in fade-in slide-in-from-right-4 duration-700 group">
+            {/* Animated Glow */}
+            <div className="absolute top-0 right-0 w-40 h-40 bg-[#0088cc]/20 rounded-full blur-3xl group-hover:bg-[#0088cc]/30 transition-all duration-700 animate-pulse" style={{ animationDuration: '3s' }} />
+            
+            <div className="relative z-10">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-[#0088cc] flex items-center justify-center shadow-lg shadow-[#0088cc]/30">
+                  <MessageSquare className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-[#0088cc] uppercase tracking-wider">Quick Option</span>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">Send via Telegram</h3>
+                </div>
+              </div>
+
+              <p className="text-sm text-slate-600 dark:text-slate-400 mb-4 leading-relaxed">
+                Share files, links, or PYQs directly with us on Telegram. Quick response guaranteed!
+              </p>
+
+              {/* Features */}
+              <div className="grid grid-cols-2 gap-2 mb-4">
+                {['Large files', 'Any link', 'Quick reply', 'Direct chat'].map((f, i) => (
+                  <div key={i} className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-[#0088cc]" />
+                    {f}
                   </div>
                 ))}
               </div>
-            )}
 
-            {/* Contribution Details Form */}
-            {!isUploading && items.length > 0 && pendingCount > 0 && (
-              <div className="mt-8 pt-8 border-t border-border/50 animate-in fade-in duration-500">
-                <h4 className="text-sm font-bold text-foreground mb-5">Contribution Details</h4>
-                <div className="space-y-5">
-                  
-                  <div className="grid gap-5 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider ml-1">Your Name (Optional)</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Aryan - BCA 2nd Sem"
-                        value={formData.name || ''}
-                        onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                        className="w-full px-4 py-3.5 rounded-xl border border-border/60 bg-background/50 focus:bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm shadow-sm"
-                      />
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider ml-1 flex items-center gap-1.5">
-                        <LinkIcon className="w-3.5 h-3.5" /> External Link (Optional)
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="Paste Google Drive / Dropbox link here"
-                        value={formData.link || ''}
-                        onChange={(e) => setFormData(prev => ({ ...prev, link: e.target.value }))}
-                        className="w-full px-4 py-3.5 rounded-xl border border-border/60 bg-background/50 focus:bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm shadow-sm"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider ml-1">About these files</label>
-                    <textarea
-                      placeholder="Which subject/year are these notes from?"
-                      value={formData.message || ''}
-                      onChange={(e) => setFormData(prev => ({ ...prev, message: e.target.value }))}
-                      className="w-full px-4 py-3.5 rounded-xl border border-border/60 bg-background/50 focus:bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm shadow-sm resize-none"
-                      rows={2}
-                    />
-                  </div>
-                </div>
+              <div className="flex gap-2">
+                <a href={`https://t.me/${TELEGRAM_USERNAME}`} target="_blank" rel="noopener noreferrer" className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-[#0088cc] hover:bg-[#0077b5] text-white text-sm font-bold rounded-xl shadow-lg shadow-[#0088cc]/25 hover:shadow-[#0088cc]/35 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-300">
+                  <Send className="w-4 h-4" />
+                  Open Telegram
+                </a>
+                <button onClick={copyTelegramLink} className="px-4 py-2.5 bg-white/50 dark:bg-white/10 hover:bg-white/70 dark:hover:bg-white/20 border border-[#0088cc]/20 rounded-xl transition-all hover:scale-105 active:scale-95">
+                  {linkCopied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4 text-slate-600 dark:text-slate-400" />}
+                </button>
               </div>
-            )}
-
-            {/* Upload Actions */}
-            {items.length > 0 && (
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-8 pt-8 border-t border-border/50">
-                {completedCount > 0 ? (
-                  <button 
-                    onClick={clearCompleted} 
-                    className="w-full sm:w-auto px-6 py-3 text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-secondary rounded-xl transition-colors"
-                  >
-                    Clear History
-                  </button>
-                ) : <div />}
-                
-                {pendingCount > 0 && !isUploading && (
-                  <button
-                    onClick={startUpload}
-                    disabled={serviceStatus !== 'ready'}
-                    className="w-full sm:w-auto px-8 py-3.5 text-sm font-bold text-primary-foreground bg-primary hover:bg-primary/90 rounded-xl shadow-xl shadow-primary/25 hover:shadow-primary/40 hover:-translate-y-0.5 transition-all duration-300 disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none flex items-center justify-center gap-2"
-                  >
-                    <Send className="w-4 h-4" />
-                    Submit Files ({pendingCount})
-                  </button>
-                )}
-              </div>
-            )}
+            </div>
           </div>
         </div>
 
-        {/* Direct Telegram Contact Card (New Section) */}
-        <div className="rounded-[2rem] bg-gradient-to-br from-blue-500/10 to-primary/5 border border-blue-500/20 p-8 text-center relative overflow-hidden group">
-          {/* Decorative background glow */}
-          <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-2xl group-hover:bg-blue-500/20 transition-all duration-500"></div>
-          
-          <div className="relative z-10 flex flex-col items-center">
-            <div className="p-3 bg-blue-500/10 text-blue-500 rounded-full mb-4">
-              <MessageSquare className="w-6 h-6" />
-            </div>
-            <h3 className="text-xl font-bold text-foreground mb-2">Have a Google Drive link to share?</h3>
-            <p className="text-sm text-muted-foreground mb-6 max-w-md">
-              If you don't want to upload files directly, you can easily send us your Google Drive or Dropbox links via Telegram. We are highly active there!
-            </p>
-            <a 
-              href={`https://t.me/${TELEGRAM_USERNAME}`} 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-6 py-3 bg-[#0088cc] hover:bg-[#007ab8] text-white text-sm font-bold rounded-xl shadow-lg shadow-[#0088cc]/30 hover:shadow-[#0088cc]/50 hover:-translate-y-0.5 transition-all duration-300"
-            >
-              <Send className="w-4 h-4" />
-              Direct Message on Telegram
-            </a>
-          </div>
+        {/* Footer Note */}
+        <div className="text-center py-3 animate-in fade-in duration-700">
+          <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center justify-center gap-1">
+            <Heart className="w-3 h-3 text-red-500 fill-red-500 animate-pulse" />
+            Your contribution helps students prepare better
+          </p>
         </div>
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-border/30 bg-background/50 mt-auto z-10">
-        <div className="container mx-auto px-4 lg:px-8 py-8 flex flex-col md:flex-row items-center justify-between gap-4">
+      <footer className="border-t border-slate-200/50 dark:border-slate-800/50 bg-white/50 dark:bg-slate-900/50">
+        <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <GraduationCap className="w-5 h-5 text-primary" />
-            <span className="text-sm font-bold text-foreground tracking-tight">PYQERA</span>
+            <GraduationCap className="w-4 h-4 text-primary" />
+            <span className="text-sm font-bold text-slate-700 dark:text-slate-300">PYQERA</span>
           </div>
-          <p className="text-xs text-muted-foreground font-medium text-center md:text-left">
-            Built by students, for students. Share knowledge, grow together.
-          </p>
-          <div className="flex gap-4 text-xs font-semibold text-muted-foreground">
-            <span className="hover:text-primary cursor-pointer transition-colors">Privacy</span>
-            <span className="hover:text-primary cursor-pointer transition-colors">Terms</span>
-          </div>
+          <p className="text-xs text-slate-500">Built by students, for students</p>
         </div>
       </footer>
+
+      {/* Error Toast */}
+      {error && (
+        <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-4 sm:w-72 z-50 animate-in fade-in zoom-in-95 slide-in-from-bottom-4 duration-300">
+          <div className="flex items-center gap-2 px-3 py-2.5 bg-red-500 text-white rounded-xl shadow-lg">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            <span className="text-sm font-medium flex-1">{error}</span>
+            <button onClick={() => setError(null)} className="p-1 hover:bg-white/20 rounded"><XCircle className="w-4 h-4" /></button>
+          </div>
+        </div>
+      )}
+
+      {/* Upload Progress Toast */}
+      {isUploading && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 animate-in fade-in zoom-in-95 duration-300">
+          <div className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-full shadow-lg shadow-primary/30">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span className="text-sm font-medium">Uploading...</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
