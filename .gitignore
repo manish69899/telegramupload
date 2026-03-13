@@ -1,0 +1,32 @@
+# 1. Dependencies (Very Heavy Folders)
+node_modules/
+mini-services/telegram-upload/node_modules/
+
+# 2. Next.js Build Files (Auto-generated)
+.next/
+out/
+build/
+.vercel/
+
+# 3. Environment Variables & Secrets (CRITICAL FOR SECURITY)
+.env
+.env.*.local
+.env.local
+mini-services/telegram-upload/.env
+
+# 4. Telegram Session File (NEVER PUSH THIS)
+mini-services/telegram-upload/session.txt
+
+# 5. Logs & Temp Files
+dev.log
+*.log
+txt.txt
+
+# 6. Database / Prisma (If using local SQLite)
+*.db
+*.db-journal
+*.sqlite
+
+# 7. OS generated files
+.DS_Store
+Thumbs.db
