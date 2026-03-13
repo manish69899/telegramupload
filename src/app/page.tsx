@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { 
   Moon, Sun, Upload, X, CheckCircle2, 
   AlertCircle, Loader2, FileText, 
@@ -55,13 +55,6 @@ function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2);
 }
 
-function getInitialTheme(): 'light' | 'dark' {
-  if (typeof window === 'undefined') return 'light';
-  const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  if (isDark) document.documentElement.classList.add('dark');
-  return isDark ? 'dark' : 'light';
-}
-
 // Main Component
 export default function HomePage() {
   const [items, setItems] = useState<UploadItem[]>([]);
@@ -72,10 +65,38 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState<UserFormData>({});
   const [isDragging, setIsDragging] = useState(false);
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => getInitialTheme());
+  const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [activeTab, setActiveTab] = useState<'files' | 'links'>('files');
   const [linkCopied, setLinkCopied] = useState(false);
   const [expandedDesc, setExpandedDesc] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<{ completed: number; failed: number; total: number } | null>(null);
+
+  // Auto detect and follow system theme
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    
+    // Set initial theme
+    const updateTheme = (isDark: boolean) => {
+      setTheme(isDark ? 'dark' : 'light');
+      if (isDark) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    };
+
+    // Initial check
+    updateTheme(mediaQuery.matches);
+
+    // Listen for system theme changes
+    const handleChange = (e: MediaQueryListEvent) => {
+      updateTheme(e.matches);
+    };
+
+    mediaQuery.addEventListener('change', handleChange);
+    
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
 
   const toggleTheme = () => {
     const newTheme = theme === 'dark' ? 'light' : 'dark';
@@ -211,6 +232,7 @@ export default function HomePage() {
     }
   };
 
+  // Parallel upload - ALL files at once
   const startUpload = async () => {
     const pendingFiles = items.filter(item => item.status === 'pending');
     const pendingLinks = linkItems.filter(item => item.status === 'pending');
@@ -219,16 +241,37 @@ export default function HomePage() {
     setIsUploading(true);
     setError(null);
 
-    for (const item of pendingFiles) {
-      setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'uploading' } : i));
-      await uploadFile(item);
-    }
-    for (const item of pendingLinks) {
-      setLinkItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'uploading' } : i));
-      await submitLink(item);
-    }
+    // Mark all as uploading
+    setItems(prev => prev.map(item => item.status === 'pending' ? { ...item, status: 'uploading' } : item));
+    setLinkItems(prev => prev.map(item => item.status === 'pending' ? { ...item, status: 'uploading' } : item));
+
+    const total = pendingFiles.length + pendingLinks.length;
+    let completed = 0;
+    let failed = 0;
+    setUploadProgress({ total, completed: 0, failed: 0 });
+
+    // Upload ALL files in PARALLEL
+    const uploadPromises = pendingFiles.map(async (item) => {
+      const success = await uploadFile(item);
+      if (success) completed++;
+      else failed++;
+      setUploadProgress(prev => prev ? { ...prev, completed, failed } : null);
+      return success;
+    });
+
+    const linkPromises = pendingLinks.map(async (item) => {
+      const success = await submitLink(item);
+      if (success) completed++;
+      else failed++;
+      setUploadProgress(prev => prev ? { ...prev, completed, failed } : null);
+      return success;
+    });
+
+    // Wait for ALL uploads
+    await Promise.all([...uploadPromises, ...linkPromises]);
 
     setIsUploading(false);
+    setUploadProgress(null);
   };
 
   const removeItem = (id: string) => setItems(prev => prev.filter(item => item.id !== id));
@@ -331,7 +374,7 @@ export default function HomePage() {
                       <FolderOpen className="w-6 h-6 text-gray-400 group-hover:text-primary transition-colors" />
                     </div>
                     <p className="text-sm font-semibold text-gray-700 dark:text-gray-200">Drop files or click</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">PDF, Images, Docs supported</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">PDF, Images, Docs - Upload all at once!</p>
                     <input type="file" multiple onChange={handleFileSelect} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
                   </div>
 
@@ -339,7 +382,7 @@ export default function HomePage() {
                   {items.length > 0 && (
                     <div className="max-h-48 overflow-y-auto space-y-2 pr-1 custom-scrollbar animate-in fade-in duration-300">
                       {items.map((item, idx) => (
-                        <div key={item.id} className="bg-gray-50 dark:bg-gray-800/70 rounded-lg overflow-hidden group animate-in slide-in-from-right-2 duration-300 border border-gray-100 dark:border-gray-700" style={{ animationDelay: `${idx * 50}ms` }}>
+                        <div key={item.id} className="bg-gray-50 dark:bg-gray-800/70 rounded-lg overflow-hidden group animate-in slide-in-from-right-2 duration-300 border border-gray-100 dark:border-gray-700" style={{ animationDelay: `${idx * 30}ms` }}>
                           {/* File Row */}
                           <div className="flex items-center gap-2 p-2">
                             <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-[10px] font-bold flex-shrink-0">{idx + 1}</span>
@@ -355,7 +398,7 @@ export default function HomePage() {
                             </div>
                             
                             {/* Action Buttons */}
-                            {item.status === 'pending' && (
+                            {item.status === 'pending' && !isUploading && (
                               <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <button 
                                   onClick={() => setExpandedDesc(expandedDesc === item.id ? null : item.id)} 
@@ -406,7 +449,7 @@ export default function HomePage() {
                   {linkItems.length > 0 && (
                     <div className="max-h-32 overflow-y-auto space-y-1.5 animate-in fade-in duration-300">
                       {linkItems.map((item, idx) => (
-                        <div key={item.id} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-gray-800/70 group animate-in slide-in-from-right-2 duration-300 border border-gray-100 dark:border-gray-700" style={{ animationDelay: `${idx * 50}ms` }}>
+                        <div key={item.id} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-gray-800/70 group animate-in slide-in-from-right-2 duration-300 border border-gray-100 dark:border-gray-700" style={{ animationDelay: `${idx * 30}ms` }}>
                           <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-[10px] font-bold">{idx + 1}</span>
                           <div className={`p-1.5 rounded-lg ${item.status === 'completed' ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600' : item.status === 'error' ? 'bg-red-100 dark:bg-red-900/40 text-red-500' : item.status === 'uploading' ? 'bg-primary/20 text-primary' : 'bg-gray-200 dark:bg-gray-700 text-gray-500'}`}>
                             {item.status === 'completed' ? <CheckCircle2 className="w-3.5 h-3.5" /> : item.status === 'error' ? <AlertCircle className="w-3.5 h-3.5" /> : item.status === 'uploading' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LinkIcon className="w-3.5 h-3.5" />}
@@ -415,7 +458,7 @@ export default function HomePage() {
                             <p className="text-xs font-medium text-primary truncate">{item.url.length > 35 ? item.url.substring(0, 35) + '...' : item.url}</p>
                             {item.description && <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate">{item.description}</p>}
                           </div>
-                          {item.status === 'pending' && <button onClick={() => removeLink(item.id)} className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/40 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"><X className="w-3.5 h-3.5" /></button>}
+                          {item.status === 'pending' && !isUploading && <button onClick={() => removeLink(item.id)} className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/40 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"><X className="w-3.5 h-3.5" /></button>}
                         </div>
                       ))}
                     </div>
@@ -443,9 +486,9 @@ export default function HomePage() {
 
                   {/* Submit Button */}
                   {totalPending > 0 && (
-                    <button onClick={startUpload} className="w-full py-2.5 bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 text-white text-sm font-bold rounded-xl shadow-lg shadow-primary/20 hover:shadow-primary/30 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-300 flex items-center justify-center gap-2 animate-in fade-in duration-300">
+                    <button onClick={startUpload} disabled={isUploading} className="w-full py-2.5 bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 text-white text-sm font-bold rounded-xl shadow-lg shadow-primary/20 hover:shadow-primary/30 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-300 flex items-center justify-center gap-2 animate-in fade-in duration-300 disabled:opacity-70">
                       <Send className="w-4 h-4" />
-                      Submit {totalPending} {totalPending === 1 ? 'item' : 'items'}
+                      Upload All ({totalPending})
                     </button>
                   )}
                 </div>
@@ -527,12 +570,23 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Upload Progress Toast */}
-      {isUploading && (
+      {/* Upload Progress Toast - Shows real progress */}
+      {isUploading && uploadProgress && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 animate-in fade-in zoom-in-95 duration-300">
-          <div className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-full shadow-lg shadow-primary/30">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            <span className="text-sm font-medium">Uploading...</span>
+          <div className="flex items-center gap-3 px-4 py-3 bg-primary text-white rounded-xl shadow-lg shadow-primary/30 min-w-64">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            <div className="flex-1">
+              <div className="flex justify-between text-sm font-medium mb-1">
+                <span>Uploading...</span>
+                <span>{uploadProgress.completed + uploadProgress.failed}/{uploadProgress.total}</span>
+              </div>
+              <div className="h-1.5 bg-white/20 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-white rounded-full transition-all duration-300" 
+                  style={{ width: `${((uploadProgress.completed + uploadProgress.failed) / uploadProgress.total) * 100}%` }}
+                />
+              </div>
+            </div>
           </div>
         </div>
       )}
