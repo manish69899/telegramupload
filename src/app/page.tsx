@@ -5,7 +5,8 @@ import {
   Moon, Sun, Upload, X, CheckCircle2, 
   AlertCircle, Loader2, FileText, 
   GraduationCap, Send, Link as LinkIcon, MessageSquare,
-  Heart, Copy, Check, XCircle, FolderOpen, Sparkles, Zap, MessageCircle, Trash2, Activity, Timer, ShieldAlert
+  Heart, Copy, Check, XCircle, FolderOpen, Sparkles, Zap, MessageCircle, Trash2, Activity, Timer, ShieldAlert,
+  FileBox, Image as ImageIcon, Archive // Added specific file icons
 } from 'lucide-react';
 
 // Types
@@ -40,6 +41,7 @@ interface UserFormData {
 // ============================================
 const TELEGRAM_USERNAME = 'pyqera_admin'; // Bina @ ke username
 const SERVICE_URL = 'https://telegram-file-upload-3gal.onrender.com';
+const MAX_FILE_BYTES = 1.5 * 1024 * 1024 * 1024; // 1.5GB
 // ============================================
 
 // Helpers
@@ -54,6 +56,15 @@ function formatFileSize(bytes: number): string {
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2);
 }
+
+// File Extension Icon Helper
+const getFileIcon = (fileName: string, className: string = "w-5 h-5") => {
+  const ext = fileName.split('.').pop()?.toLowerCase();
+  if (['pdf'].includes(ext || '')) return <FileBox className={`${className} text-red-500`} />;
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext || '')) return <ImageIcon className={`${className} text-emerald-500`} />;
+  if (['zip', 'rar', '7z', 'tar'].includes(ext || '')) return <Archive className={`${className} text-amber-500`} />;
+  return <FileText className={`${className} text-blue-500`} />;
+};
 
 // ============================================
 // 🎵 PREMIUM UX EFFECTS (Sound & Confetti)
@@ -92,7 +103,7 @@ const triggerConfetti = () => {
   document.body.appendChild(script);
 };
 
-// UI Design Helpers (PREMIUM HIGH-CONTRAST COLORS)
+// UI Design Helpers
 const getRowClass = (status: UploadStatus) => {
   if (status === 'uploading') return 'bg-blue-50/90 dark:bg-blue-900/40 border-blue-400 dark:border-blue-500 shadow-md shadow-blue-500/20 scale-[1.01] transition-all relative overflow-hidden';
   if (status === 'completed') return 'bg-emerald-50/90 dark:bg-emerald-900/30 border-emerald-400 dark:border-emerald-500 transition-all';
@@ -101,7 +112,7 @@ const getRowClass = (status: UploadStatus) => {
 };
 
 const getIconClass = (status: UploadStatus) => {
-  if (status === 'uploading') return 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-100'; // Loader wrapper
+  if (status === 'uploading') return 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-100'; 
   if (status === 'completed') return 'bg-emerald-200 dark:bg-emerald-800 text-emerald-700 dark:text-emerald-100';
   if (status === 'error') return 'bg-red-200 dark:bg-red-800 text-red-700 dark:text-red-100';
   return 'bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-300';
@@ -115,12 +126,21 @@ export default function HomePage() {
   const [newLinkDesc, setNewLinkDesc] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [formData, setFormData] = useState<UserFormData>({});
+  const [successMessage, setSuccessMessage] = useState<string | null>(null); // New Success State
+  
+  // LocalStorage Auto-Save Form Data
+  const [formData, setFormData] = useState<UserFormData>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('pyqera_userdata');
+      if (saved) return JSON.parse(saved);
+    }
+    return {};
+  });
   
   // Drag states
   const [isDragging, setIsDragging] = useState(false);
   const [isGlobalDragging, setIsGlobalDragging] = useState(false);
-  const dragCounter = useRef(0); // Prevents flicker on global drag
+  const dragCounter = useRef(0);
 
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [activeTab, setActiveTab] = useState<'files' | 'links'>('files');
@@ -139,6 +159,11 @@ export default function HomePage() {
 
   // Sync ref for ETA calculations
   useEffect(() => { itemsRef.current = items; }, [items]);
+
+  // Save FormData to LocalStorage on change
+  useEffect(() => {
+    localStorage.setItem('pyqera_userdata', JSON.stringify(formData));
+  }, [formData]);
 
   // ==========================================
   // 🌍 GLOBAL DRAG & DROP OVERLAY LOGIC
@@ -239,11 +264,9 @@ export default function HomePage() {
     let interval: NodeJS.Timeout;
     if (isUploading) {
       interval = setInterval(() => {
-        // 1. Generate realistic speed (between 1.5 and 4.8 MB/s)
         const speedMBps = (Math.random() * (4.8 - 1.5) + 1.5);
         setLiveSpeed(`${speedMBps.toFixed(1)} MB/s`);
 
-        // 2. Real ETA Math based on progress
         const currentItems = itemsRef.current;
         const activeFiles = currentItems.filter(i => i.status === 'uploading' || i.status === 'pending');
         
@@ -277,18 +300,16 @@ export default function HomePage() {
     return () => clearInterval(interval);
   }, [isUploading]);
 
-  const toggleTheme = () => {
-    const newTheme = theme === 'dark' ? 'light' : 'dark';
-    setTheme(newTheme);
-    if (newTheme === 'dark') document.documentElement.classList.add('dark');
-    else document.documentElement.classList.remove('dark');
-  };
-
   const addFiles = useCallback((files: File[]) => {
     setError(null);
     for (const file of files) {
+      // SMART ERROR RECOVERY: PRE-UPLOAD SIZE CHECK
+      if (file.size > MAX_FILE_BYTES) {
+        setError(`File "${file.name}" is too large (Max limit is 1.5GB)`);
+        continue;
+      }
       if (file.size === 0) {
-        setError(`${file.name} is empty`);
+        setError(`File "${file.name}" is empty`);
         continue;
       }
       setItems(prev => {
@@ -345,14 +366,13 @@ export default function HomePage() {
   const uploadFile = async (item: UploadItem): Promise<boolean> => {
     setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'uploading', progress: 0 } : i));
 
-    // INDIVIDUAL FILE PROGRESS SIMULATOR
     const progressInterval = setInterval(() => {
       setItems(prev => prev.map(i => {
         if (i.id === item.id && i.status === 'uploading') {
           const current = i.progress || 0;
-          const increment = Math.random() * 8 + 2; // Jump by 2-10%
+          const increment = Math.random() * 8 + 2; 
           const next = current + increment;
-          return { ...i, progress: next > 95 ? 95 : next }; // Cap at 95% until complete
+          return { ...i, progress: next > 95 ? 95 : next }; 
         }
         return i;
       }));
@@ -455,6 +475,7 @@ export default function HomePage() {
     setIsUploading(true);
     setShowVisibilityWarning(false);
     setError(null);
+    setSuccessMessage(null);
 
     const total = pendingFiles.length + pendingLinks.length;
     let completed = 0;
@@ -475,10 +496,15 @@ export default function HomePage() {
 
     setIsUploading(false);
 
-    // 🎉 SUCCESS TRIGGER: If at least one succeeded and nothing failed horribly
+    // 🎉 SUCCESS TRIGGER REWARD SYSTEM
     if (completed > 0 && failed === 0) {
       playSuccessSound();
       triggerConfetti();
+      if (completed >= 5) {
+         setSuccessMessage(`Hero! You uploaded ${completed} files. Keep sharing PYQs to earn community rewards! 🌟`);
+      } else {
+         setSuccessMessage(`Awesome! ${completed} files uploaded successfully. Thanks for helping! 🚀`);
+      }
     }
 
     setTimeout(() => {
@@ -492,7 +518,7 @@ export default function HomePage() {
   const clearCompleted = () => {
     setItems(prev => prev.filter(item => item.status !== 'completed'));
     setLinkItems(prev => prev.filter(item => item.status !== 'completed'));
-    setFormData({});
+    setSuccessMessage(null);
   };
 
   const copyTelegramLink = () => {
@@ -621,6 +647,17 @@ export default function HomePage() {
                     <input type="file" multiple onChange={handleFileSelect} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
                   </div>
 
+                  {/* Empty State Illustration */}
+                  {items.length === 0 && !isDragging && (
+                    <div className="py-6 flex flex-col items-center justify-center opacity-60 animate-in fade-in duration-500">
+                      <div className="relative w-20 h-20 mb-2">
+                         <div className="absolute inset-0 bg-blue-500/20 blur-xl rounded-full animate-pulse" />
+                         <FileBox className="w-full h-full text-slate-300 dark:text-slate-600" />
+                      </div>
+                      <p className="text-xs font-bold text-slate-400">No files selected yet</p>
+                    </div>
+                  )}
+
                   {/* Files List */}
                   {items.length > 0 && (
                     <div className="max-h-60 overflow-y-auto space-y-2 pr-1 custom-scrollbar animate-in fade-in duration-300">
@@ -630,12 +667,11 @@ export default function HomePage() {
                           {/* File Row */}
                           <div className="flex items-center gap-3 p-3">
                             
-                            {/* File Icon / Circular Progress / Number */}
+                            {/* Smart Icon / Circular Progress */}
                             <div className={`w-10 h-10 flex-shrink-0 rounded-xl flex items-center justify-center shadow-sm relative ${getIconClass(item.status)}`}>
                               {item.status === 'completed' ? <CheckCircle2 className="w-5 h-5" /> : 
                                item.status === 'error' ? <AlertCircle className="w-5 h-5" /> : 
                                item.status === 'uploading' ? (
-                                // EXACT INDIVIDUAL FILE PROGRESS RING
                                 <div className="relative flex items-center justify-center w-full h-full">
                                   <svg className="w-8 h-8 transform -rotate-90">
                                     <circle cx="16" cy="16" r="14" stroke="currentColor" strokeWidth="3" fill="none" className="text-blue-200 dark:text-blue-900/50" />
@@ -655,7 +691,8 @@ export default function HomePage() {
                                   </span>
                                 </div>
                                ) : 
-                               <span className="text-sm font-black">{idx + 1}</span>}
+                               getFileIcon(item.name) // SMART ICON RENDER
+                               }
                             </div>
                             
                             {/* Main Info */}
@@ -761,6 +798,17 @@ export default function HomePage() {
                     </button>
                   </div>
                   <input type="text" placeholder="Description (optional)" value={newLinkDesc} onChange={(e) => setNewLinkDesc(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900 text-sm font-bold text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all shadow-inner" />
+
+                  {/* Empty State Link */}
+                  {linkItems.length === 0 && (
+                    <div className="py-6 flex flex-col items-center justify-center opacity-60 animate-in fade-in duration-500">
+                      <div className="relative w-16 h-16 mb-2">
+                         <div className="absolute inset-0 bg-blue-500/20 blur-xl rounded-full animate-pulse" />
+                         <LinkIcon className="w-full h-full text-slate-300 dark:text-slate-600" />
+                      </div>
+                      <p className="text-xs font-bold text-slate-400">No links added yet</p>
+                    </div>
+                  )}
 
                   {/* Links List */}
                   {linkItems.length > 0 && (
@@ -906,6 +954,17 @@ export default function HomePage() {
             <AlertCircle className="w-5 h-5 flex-shrink-0" />
             <span className="text-sm font-bold flex-1">{error}</span>
             <button onClick={() => setError(null)} className="p-1.5 hover:bg-white/20 rounded-lg transition-colors"><XCircle className="w-4 h-4" /></button>
+          </div>
+        </div>
+      )}
+
+      {/* SUCCESS TOAST MESSAGE */}
+      {successMessage && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[100] animate-in fade-in slide-in-from-top-10 duration-500 w-[90%] sm:w-[400px]">
+          <div className="flex items-center gap-3 px-4 py-3 bg-emerald-500 text-white rounded-2xl shadow-2xl shadow-emerald-500/40 border border-emerald-400">
+            <CheckCircle2 className="w-6 h-6 flex-shrink-0" />
+            <span className="text-sm font-black flex-1">{successMessage}</span>
+            <button onClick={() => setSuccessMessage(null)} className="p-1.5 hover:bg-white/20 rounded-lg transition-colors"><X className="w-4 h-4" /></button>
           </div>
         </div>
       )}
