@@ -26,13 +26,13 @@ const SESSION_FILE = join(DATA_DIR, 'session.txt');
 const LOGS_DIR = join(DATA_DIR, 'logs');
 const TEMP_DIR = join(DATA_DIR, 'temp'); // NEW: Temp directory for saving files
 
-// Rate limiting
-const RATE_LIMIT_WINDOW = 6000; // 1 minute
-const RATE_LIMIT_MAX = 1000; // max requests per window
+// Rate limiting settings (Safe & Fast)
+const RATE_LIMIT_WINDOW = 60000; // 1 minute in milliseconds
+const RATE_LIMIT_MAX = 30; // Max 30 requests per minute
 const uploadRequests = new Map<string, number[]>();
 
 // ============================================
-// Concurrency Limiter (Queue System) - NEW
+// Concurrency Limiter (Queue System)
 // ============================================
 const MAX_CONCURRENT_UPLOADS = 2; // Telegram ko ek sath 2 files hi bhejega
 let activeUploads = 0;
@@ -123,35 +123,38 @@ function saveSession(session: string) {
   log('INFO', '✅ Session saved');
 }
 
-// Rate limit check
-function checkRateLimit(clientId: string): boolean {
+// ============================================
+// Rate Limiting Smart Logic
+// ============================================
+function isRateLimited(userId: string): boolean {
   const now = Date.now();
-  const requests = uploadRequests.get(clientId) || [];
-  
-  // Filter old requests
-  const recentRequests = requests.filter(time => now - time < RATE_LIMIT_WINDOW);
+  if (!uploadRequests.has(userId)) {
+    uploadRequests.set(userId, [now]);
+    return false;
+  }
+
+  const timestamps = uploadRequests.get(userId) || [];
+  // Sirf pichle 1 minute ke timestamps rakho, baaki nikaal do (Cleaning)
+  const recentRequests = timestamps.filter((time) => now - time < RATE_LIMIT_WINDOW);
   
   if (recentRequests.length >= RATE_LIMIT_MAX) {
-    return false; // Rate limited
+    return true; // Limit cross ho gayi!
   }
-  
+
   recentRequests.push(now);
-  uploadRequests.set(clientId, recentRequests);
-  return true;
+  uploadRequests.set(userId, recentRequests);
+  return false;
 }
 
-// Clean old rate limit entries
+// Har 5 minute mein kachra saaf karein
 setInterval(() => {
   const now = Date.now();
-  uploadRequests.forEach((requests, clientId) => {
-    const recent = requests.filter(time => now - time < RATE_LIMIT_WINDOW);
-    if (recent.length === 0) {
-      uploadRequests.delete(clientId);
-    } else {
-      uploadRequests.set(clientId, recent);
+  for (const [userId, timestamps] of uploadRequests.entries()) {
+    if (timestamps.length > 0 && (now - timestamps[timestamps.length - 1] > RATE_LIMIT_WINDOW)) {
+      uploadRequests.delete(userId); // Purane users ka data clear
     }
-  });
-}, 60000);
+  }
+}, 300000); 
 
 // ============================================
 // Initialize
@@ -276,8 +279,8 @@ async function handleFileUpload(request: Request): Promise<Response> {
   const uploadId = request.headers.get('X-Upload-Id') || crypto.randomUUID();
   const clientId = request.headers.get('X-Client-Id') || 'anonymous';
   
-  // Rate limit check
-  if (!checkRateLimit(clientId)) {
+  // Naya Rate limit check
+  if (isRateLimited(clientId)) {
     return errorResponse('Too many requests. Please wait a moment.', 429);
   }
 
@@ -357,7 +360,8 @@ async function handleLinkUpload(request: Request): Promise<Response> {
   const uploadId = request.headers.get('X-Upload-Id') || crypto.randomUUID();
   const clientId = request.headers.get('X-Client-Id') || 'anonymous';
   
-  if (!checkRateLimit(clientId)) {
+  // Naya Rate limit check
+  if (isRateLimited(clientId)) {
     return errorResponse('Too many requests. Please wait a moment.', 429);
   }
 
