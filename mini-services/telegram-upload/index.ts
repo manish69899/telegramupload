@@ -1,21 +1,20 @@
 /**
- * Telegram MTProto Upload Service - Improved Version
- * 
- * Features:
+ * Telegram MTProto Upload Service - Optimized Version
+ * * Features:
  * - Direct file uploads to Telegram using MTProto protocol
+ * - Concurrency Control (Queue system to prevent FloodWaits)
+ * - Disk-based buffering (Saves RAM, prevents OOM crashes)
  * - Supports files up to 1.5GB
  * - Link sharing support
- * - Better error handling
- * - Rate limiting
- * - Proper logging
+ * - Better error handling & Rate limiting
  */
 
 import { serve } from 'bun';
 import { TelegramClient } from 'telegram';
 import { StringSession } from 'telegram/sessions';
 import { CustomFile } from 'telegram/client/uploads';
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
-import { join, dirname } from 'path';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'fs';
+import { join } from 'path';
 
 // ============================================
 // Configuration
@@ -25,6 +24,7 @@ const MAX_FILE_SIZE = 1.5 * 1024 * 1024 * 1024; // 1.5GB
 const DATA_DIR = join(import.meta.dir, 'data');
 const SESSION_FILE = join(DATA_DIR, 'session.txt');
 const LOGS_DIR = join(DATA_DIR, 'logs');
+const TEMP_DIR = join(DATA_DIR, 'temp'); // NEW: Temp directory for saving files
 
 // Rate limiting
 const RATE_LIMIT_WINDOW = 6000; // 1 minute
@@ -32,12 +32,38 @@ const RATE_LIMIT_MAX = 1000; // max requests per window
 const uploadRequests = new Map<string, number[]>();
 
 // ============================================
+// Concurrency Limiter (Queue System) - NEW
+// ============================================
+const MAX_CONCURRENT_UPLOADS = 2; // Telegram ko ek sath 2 files hi bhejega
+let activeUploads = 0;
+const uploadQueue: (() => void)[] = [];
+
+async function acquireUploadSlot(): Promise<void> {
+  if (activeUploads < MAX_CONCURRENT_UPLOADS) {
+    activeUploads++;
+    return Promise.resolve();
+  }
+  return new Promise<void>(resolve => {
+    uploadQueue.push(resolve);
+  });
+}
+
+function releaseUploadSlot() {
+  activeUploads--;
+  if (uploadQueue.length > 0) {
+    activeUploads++;
+    const next = uploadQueue.shift();
+    if (next) next();
+  }
+}
+
+// ============================================
 // Utility Functions
 // ============================================
 
 // Ensure directories exist
 function ensureDirectories() {
-  [DATA_DIR, LOGS_DIR].forEach(dir => {
+  [DATA_DIR, LOGS_DIR, TEMP_DIR].forEach(dir => {
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true });
     }
@@ -245,7 +271,7 @@ async function initializeClient(): Promise<boolean> {
 // Upload Handlers
 // ============================================
 
-// File upload
+// File upload (UPDATED WITH QUEUE & DISK CACHING)
 async function handleFileUpload(request: Request): Promise<Response> {
   const uploadId = request.headers.get('X-Upload-Id') || crypto.randomUUID();
   const clientId = request.headers.get('X-Client-Id') || 'anonymous';
@@ -254,6 +280,11 @@ async function handleFileUpload(request: Request): Promise<Response> {
   if (!checkRateLimit(clientId)) {
     return errorResponse('Too many requests. Please wait a moment.', 429);
   }
+
+  // 1. Queue System: Wait for a slot before processing
+  await acquireUploadSlot();
+  
+  let tempFilePath = '';
 
   try {
     if (!client || !isInitialized) {
@@ -276,22 +307,20 @@ async function handleFileUpload(request: Request): Promise<Response> {
       return errorResponse('File exceeds 1.5GB limit', 400);
     }
 
-    log('INFO', `📤 Uploading file: ${fileName}`, { size: `${(file.size / 1024 / 1024).toFixed(2)} MB` });
-
+    log('INFO', `📤 Processing file: ${fileName}`, { size: `${(file.size / 1024 / 1024).toFixed(2)} MB` });
     const startTime = Date.now();
 
-    // Convert to Buffer
-    const arrayBuffer = await file.arrayBuffer();
-    const fileBuffer = Buffer.from(arrayBuffer);
+    // 2. Disk Caching: Save to disk instead of filling up RAM
+    const safeFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_'); // sanitize name
+    tempFilePath = join(TEMP_DIR, `${crypto.randomUUID()}_${safeFileName}`);
+    await Bun.write(tempFilePath, file);
 
-    // CustomFile for exact filename
-    const fileToUpload = new CustomFile(fileName, fileBuffer.byteLength, '', fileBuffer);
-
-    // Upload to Telegram
+    // 3. Upload directly from file path using GramJS
     await client.sendFile(config.channelId, {
-      file: fileToUpload,
+      file: tempFilePath,
       caption: caption || undefined,
       forceDocument: true,
+      workers: 2 // Use 2 workers for better upload speed without spamming
     });
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);
@@ -305,9 +334,21 @@ async function handleFileUpload(request: Request): Promise<Response> {
       duration: parseFloat(duration),
     });
 
-  } catch (error) {
-    log('ERROR', 'File upload failed', error);
+  } catch (error: any) {
+    log('ERROR', 'File upload failed', error?.message || error);
+    
+    // Telegram Rate Limit Handle
+    if (error?.message && String(error.message).includes('FLOOD')) {
+       return errorResponse('Telegram rate limit hit. Upload paused temporarily.', 429);
+    }
     return errorResponse('Upload failed. Please try again.', 500);
+    
+  } finally {
+    // 4. Cleanup: Delete temp file and free the queue slot
+    if (tempFilePath && existsSync(tempFilePath)) {
+      try { unlinkSync(tempFilePath); } catch (e) { log('WARN', `Could not delete temp file: ${tempFilePath}`); }
+    }
+    releaseUploadSlot();
   }
 }
 
@@ -316,7 +357,6 @@ async function handleLinkUpload(request: Request): Promise<Response> {
   const uploadId = request.headers.get('X-Upload-Id') || crypto.randomUUID();
   const clientId = request.headers.get('X-Client-Id') || 'anonymous';
   
-  // Rate limit check
   if (!checkRateLimit(clientId)) {
     return errorResponse('Too many requests. Please wait a moment.', 429);
   }
@@ -324,19 +364,14 @@ async function handleLinkUpload(request: Request): Promise<Response> {
   try {
     if (!client || !isInitialized) {
       const success = await initializeClient();
-      if (!success) {
-        return errorResponse('Service not ready. Please try again.', 503);
-      }
+      if (!success) return errorResponse('Service not ready. Please try again.', 503);
     }
 
     const body = await request.json();
     const { url, caption } = body as { url?: string; caption?: string };
 
-    if (!url) {
-      return errorResponse('No URL provided', 400);
-    }
+    if (!url) return errorResponse('No URL provided', 400);
 
-    // Validate URL
     try {
       const parsedUrl = new URL(url);
       if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
@@ -347,13 +382,10 @@ async function handleLinkUpload(request: Request): Promise<Response> {
     }
 
     log('INFO', `🔗 Processing link`, { url: url.substring(0, 50) + '...' });
-
     const startTime = Date.now();
 
-    // Format message with link
     const message = caption || `📎 Shared Link\n\n🔗 URL: ${url}\n\n⏰ Submitted: ${new Date().toISOString()}`;
 
-    // Send message to channel
     await client.sendMessage(config.channelId, {
       message,
       parseMode: 'html',
@@ -393,36 +425,15 @@ async function handleRequest(request: Request): Promise<Response> {
   const url = new URL(request.url);
   const method = request.method;
 
-  // CORS preflight
-  if (method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
+  if (method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
-  // Routes
   try {
-    // Health check
-    if (url.pathname === '/' || url.pathname === '/health') {
-      return handleStatus();
-    }
+    if (url.pathname === '/' || url.pathname === '/health') return handleStatus();
+    if (url.pathname === '/upload' && method === 'POST') return handleFileUpload(request);
+    if (url.pathname === '/upload-link' && method === 'POST') return handleLinkUpload(request);
+    if (url.pathname === '/status') return handleStatus();
 
-    // File upload
-    if (url.pathname === '/upload' && method === 'POST') {
-      return handleFileUpload(request);
-    }
-
-    // Link upload - NEW ENDPOINT
-    if (url.pathname === '/upload-link' && method === 'POST') {
-      return handleLinkUpload(request);
-    }
-
-    // Status
-    if (url.pathname === '/status') {
-      return handleStatus();
-    }
-
-    // 404
     return errorResponse('Not found', 404);
-
   } catch (error) {
     log('ERROR', 'Request handler error', error);
     return errorResponse('Internal server error', 500);
@@ -434,7 +445,6 @@ async function handleRequest(request: Request): Promise<Response> {
 // ============================================
 log('INFO', `🚀 Starting Telegram Upload Service on port ${PORT}...`);
 
-// Initialize client in background
 initializeClient().then((success) => {
   if (success) {
     log('INFO', '✅ Service ready to accept uploads!');
@@ -443,7 +453,6 @@ initializeClient().then((success) => {
   }
 });
 
-// Start HTTP server
 serve({
   port: PORT,
   fetch: handleRequest,

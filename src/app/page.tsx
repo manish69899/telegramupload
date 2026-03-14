@@ -38,7 +38,7 @@ interface UserFormData {
 // ============================================
 // 🔧 CONFIGURATION
 // ============================================
-const TELEGRAM_USERNAME = 'your_username'; // Bina @ ke username
+const TELEGRAM_USERNAME = 'pyqera_admin'; // Bina @ ke username
 const SERVICE_URL = 'https://telegram-file-upload-3gal.onrender.com';
 // ============================================
 
@@ -149,6 +149,9 @@ export default function HomePage() {
   };
 
   const uploadFile = async (item: UploadItem): Promise<boolean> => {
+    // Sirf is specific file ko 'uploading' state me daalo
+    setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'uploading' } : i));
+
     const caption = `📚 PYQERA\n👤 ${formData.name || 'Anonymous'}\n💬 ${formData.message || 'N/A'}\n📄 ${item.name}\n📝 ${item.description || 'No description'}\n📊 ${formatFileSize(item.size)}`;
     const formDataToSend = new FormData();
     formDataToSend.append('file', item.file);
@@ -192,6 +195,9 @@ export default function HomePage() {
   };
 
   const submitLink = async (item: LinkItem): Promise<boolean> => {
+    // Link ko uploading state me daalo
+    setLinkItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'uploading' } : i));
+
     const caption = `📚 PYQERA Link\n👤 ${formData.name || 'Anonymous'}\n💬 ${formData.message || 'N/A'}\n🔗 ${item.url}\n📝 ${item.description || 'N/A'}`;
     try {
       const response = await fetch(`${SERVICE_URL}/upload-link`, {
@@ -232,7 +238,9 @@ export default function HomePage() {
     }
   };
 
-  // Parallel upload - ALL files at once
+  // ==========================================
+  // 🚀 SEQUENTIAL UPLOAD LOGIC (THE FIX)
+  // ==========================================
   const startUpload = async () => {
     const pendingFiles = items.filter(item => item.status === 'pending');
     const pendingLinks = linkItems.filter(item => item.status === 'pending');
@@ -241,41 +249,46 @@ export default function HomePage() {
     setIsUploading(true);
     setError(null);
 
-    // Mark all as uploading
-    setItems(prev => prev.map(item => item.status === 'pending' ? { ...item, status: 'uploading' } : item));
-    setLinkItems(prev => prev.map(item => item.status === 'pending' ? { ...item, status: 'uploading' } : item));
-
     const total = pendingFiles.length + pendingLinks.length;
     let completed = 0;
     let failed = 0;
     setUploadProgress({ total, completed: 0, failed: 0 });
 
-    // Upload ALL files in PARALLEL
-    const uploadPromises = pendingFiles.map(async (item) => {
+    // 1. Files ko ek-ek karke (sequentially) upload karo
+    for (const item of pendingFiles) {
       const success = await uploadFile(item);
-      if (success) completed++;
-      else failed++;
-      setUploadProgress(prev => prev ? { ...prev, completed, failed } : null);
-      return success;
-    });
+      if (success) {
+        completed++;
+      } else {
+        failed++;
+      }
+      // UI progress update karo har file ke baad
+      setUploadProgress({ total, completed, failed });
+    }
 
-    const linkPromises = pendingLinks.map(async (item) => {
+    // 2. Uske baad Links ko ek-ek karke submit karo
+    for (const item of pendingLinks) {
       const success = await submitLink(item);
-      if (success) completed++;
-      else failed++;
-      setUploadProgress(prev => prev ? { ...prev, completed, failed } : null);
-      return success;
-    });
-
-    // Wait for ALL uploads
-    await Promise.all([...uploadPromises, ...linkPromises]);
+      if (success) {
+        completed++;
+      } else {
+        failed++;
+      }
+      // UI progress update karo har link ke baad
+      setUploadProgress({ total, completed, failed });
+    }
 
     setIsUploading(false);
-    setUploadProgress(null);
+    
+    // Thodi der progress bar dikha kar hata do taaki user success dekh sake
+    setTimeout(() => {
+      setUploadProgress(null);
+    }, 2000);
   };
 
   const removeItem = (id: string) => setItems(prev => prev.filter(item => item.id !== id));
   const removeLink = (id: string) => setLinkItems(prev => prev.filter(item => item.id !== id));
+  
   const clearCompleted = () => {
     setItems(prev => prev.filter(item => item.status !== 'completed' && item.status !== 'error'));
     setLinkItems(prev => prev.filter(item => item.status !== 'completed' && item.status !== 'error'));
@@ -288,9 +301,11 @@ export default function HomePage() {
     setTimeout(() => setLinkCopied(false), 2000);
   };
 
-  const pendingFiles = items.filter(i => i.status === 'pending').length;
-  const pendingLinks = linkItems.filter(i => i.status === 'pending').length;
-  const totalPending = pendingFiles + pendingLinks;
+  // UI Stats calculation
+  const pendingFilesCount = items.filter(i => i.status === 'pending').length;
+  const pendingLinksCount = linkItems.filter(i => i.status === 'pending').length;
+  const totalPending = pendingFilesCount + pendingLinksCount;
+  
   const totalItems = items.length + linkItems.length;
   const completedItems = items.filter(i => i.status === 'completed').length + linkItems.filter(i => i.status === 'completed').length;
   const uploadingItems = items.filter(i => i.status === 'uploading').length + linkItems.filter(i => i.status === 'uploading').length;
@@ -382,7 +397,7 @@ export default function HomePage() {
                   {items.length > 0 && (
                     <div className="max-h-48 overflow-y-auto space-y-2 pr-1 custom-scrollbar animate-in fade-in duration-300">
                       {items.map((item, idx) => (
-                        <div key={item.id} className="bg-gray-50 dark:bg-gray-800/70 rounded-lg overflow-hidden group animate-in slide-in-from-right-2 duration-300 border border-gray-100 dark:border-gray-700" style={{ animationDelay: `${idx * 30}ms` }}>
+                        <div key={item.id} className="bg-gray-50 dark:bg-gray-800/70 rounded-lg overflow-hidden group animate-in slide-in-from-right-2 duration-300 border border-gray-100 dark:border-gray-700" style={{ animationDelay: `${Math.min(idx * 30, 300)}ms` }}>
                           {/* File Row */}
                           <div className="flex items-center gap-2 p-2">
                             <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-[10px] font-bold flex-shrink-0">{idx + 1}</span>
@@ -394,6 +409,7 @@ export default function HomePage() {
                               <div className="flex items-center gap-2">
                                 <p className="text-[10px] text-gray-500 dark:text-gray-400">{formatFileSize(item.size)}</p>
                                 {item.description && <p className="text-[10px] text-primary truncate">• {item.description}</p>}
+                                {item.error && <p className="text-[10px] text-red-500 truncate">• {item.error}</p>}
                               </div>
                             </div>
                             
@@ -439,7 +455,7 @@ export default function HomePage() {
                 <div className="space-y-3">
                   <div className="flex gap-2">
                     <input type="text" placeholder="Paste any cloud link..." value={newLink} onChange={(e) => setNewLink(e.target.value)} className="flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all" />
-                    <button onClick={addLink} disabled={!newLink.trim()} className="px-4 py-2 bg-primary hover:bg-primary/90 text-white text-sm font-semibold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:scale-105 active:scale-95">
+                    <button onClick={addLink} disabled={!newLink.trim() || isUploading} className="px-4 py-2 bg-primary hover:bg-primary/90 text-white text-sm font-semibold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:scale-105 active:scale-95">
                       <Zap className="w-4 h-4" />
                     </button>
                   </div>
@@ -449,7 +465,7 @@ export default function HomePage() {
                   {linkItems.length > 0 && (
                     <div className="max-h-32 overflow-y-auto space-y-1.5 animate-in fade-in duration-300">
                       {linkItems.map((item, idx) => (
-                        <div key={item.id} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-gray-800/70 group animate-in slide-in-from-right-2 duration-300 border border-gray-100 dark:border-gray-700" style={{ animationDelay: `${idx * 30}ms` }}>
+                        <div key={item.id} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-gray-800/70 group animate-in slide-in-from-right-2 duration-300 border border-gray-100 dark:border-gray-700" style={{ animationDelay: `${Math.min(idx * 30, 300)}ms` }}>
                           <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-[10px] font-bold">{idx + 1}</span>
                           <div className={`p-1.5 rounded-lg ${item.status === 'completed' ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600' : item.status === 'error' ? 'bg-red-100 dark:bg-red-900/40 text-red-500' : item.status === 'uploading' ? 'bg-primary/20 text-primary' : 'bg-gray-200 dark:bg-gray-700 text-gray-500'}`}>
                             {item.status === 'completed' ? <CheckCircle2 className="w-3.5 h-3.5" /> : item.status === 'error' ? <AlertCircle className="w-3.5 h-3.5" /> : item.status === 'uploading' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LinkIcon className="w-3.5 h-3.5" />}
@@ -457,6 +473,7 @@ export default function HomePage() {
                           <div className="flex-1 min-w-0">
                             <p className="text-xs font-medium text-primary truncate">{item.url.length > 35 ? item.url.substring(0, 35) + '...' : item.url}</p>
                             {item.description && <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate">{item.description}</p>}
+                            {item.error && <p className="text-[10px] text-red-500 truncate">• {item.error}</p>}
                           </div>
                           {item.status === 'pending' && !isUploading && <button onClick={() => removeLink(item.id)} className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/40 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"><X className="w-3.5 h-3.5" /></button>}
                         </div>
@@ -481,14 +498,14 @@ export default function HomePage() {
                       {completedItems > 0 && <span className="text-emerald-600 dark:text-emerald-400">{completedItems} done</span>}
                       {uploadingItems > 0 && <span className="text-primary">{uploadingItems} uploading</span>}
                     </div>
-                    {completedItems > 0 && <button onClick={clearCompleted} className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">Clear done</button>}
+                    {completedItems > 0 && <button onClick={clearCompleted} disabled={isUploading} className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 disabled:opacity-50">Clear done</button>}
                   </div>
 
                   {/* Submit Button */}
                   {totalPending > 0 && (
-                    <button onClick={startUpload} disabled={isUploading} className="w-full py-2.5 bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 text-white text-sm font-bold rounded-xl shadow-lg shadow-primary/20 hover:shadow-primary/30 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-300 flex items-center justify-center gap-2 animate-in fade-in duration-300 disabled:opacity-70">
-                      <Send className="w-4 h-4" />
-                      Upload All ({totalPending})
+                    <button onClick={startUpload} disabled={isUploading} className="w-full py-2.5 bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 text-white text-sm font-bold rounded-xl shadow-lg shadow-primary/20 hover:shadow-primary/30 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-300 flex items-center justify-center gap-2 animate-in fade-in duration-300 disabled:opacity-70 disabled:hover:translate-y-0">
+                      {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                      {isUploading ? `Uploading...` : `Upload All (${totalPending})`}
                     </button>
                   )}
                 </div>
@@ -570,15 +587,15 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Upload Progress Toast - Shows real progress */}
+      {/* Upload Progress Toast - Sequential sync */}
       {isUploading && uploadProgress && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 animate-in fade-in zoom-in-95 duration-300">
-          <div className="flex items-center gap-3 px-4 py-3 bg-primary text-white rounded-xl shadow-lg shadow-primary/30 min-w-64">
+          <div className="flex items-center gap-3 px-4 py-3 bg-primary text-white rounded-xl shadow-lg shadow-primary/30 min-w-[280px]">
             <Loader2 className="w-5 h-5 animate-spin" />
             <div className="flex-1">
               <div className="flex justify-between text-sm font-medium mb-1">
-                <span>Uploading...</span>
-                <span>{uploadProgress.completed + uploadProgress.failed}/{uploadProgress.total}</span>
+                <span>Uploading {(uploadProgress.completed + uploadProgress.failed) + 1 > uploadProgress.total ? uploadProgress.total : (uploadProgress.completed + uploadProgress.failed) + 1} of {uploadProgress.total}...</span>
+                <span>{Math.round(((uploadProgress.completed + uploadProgress.failed) / uploadProgress.total) * 100)}%</span>
               </div>
               <div className="h-1.5 bg-white/20 rounded-full overflow-hidden">
                 <div 
