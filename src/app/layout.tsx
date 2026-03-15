@@ -1,27 +1,21 @@
-import type { Metadata } from "next";
-import { Inter } from "next/font/google";
-import "./globals.css";
-
-const inter = Inter({ 
-  subsets: ["latin"],
-  variable: "--font-inter",
-});
+import type { Metadata } from 'next'
+import './globals.css'
 
 export const metadata: Metadata = {
-  title: "FileDrop - Secure File Upload",
-  description: "Upload files securely to cloud storage. Fast and free.",
-};
+  title: 'PYQERA - Share Notes & PYQs',
+  description: 'Help thousands of students by sharing your study materials',
+}
 
 export default function RootLayout({
   children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+}: {
+  children: React.ReactNode
+}) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.variable} font-sans antialiased bg-background text-foreground`}>
+      <body className="antialiased">
         {children}
       </body>
     </html>
-  );
+  )
 }

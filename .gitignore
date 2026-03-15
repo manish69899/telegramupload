@@ -7,7 +7,7 @@ mini-services/telegram-upload/node_modules/
 out/
 build/
 .vercel/
-
+.idea/
 # 3. Environment Variables & Secrets (CRITICAL FOR SECURITY)
 .env
 .env.*.local
