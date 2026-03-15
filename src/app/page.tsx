@@ -74,17 +74,14 @@ const CONFIG = {
   },
   
   // Ads Script - Yahan apna script paste karo
-  ADS_SCRIPT: `<!-- AD SCRIPT YAHAN PASTE KARO -->
-<!-- Example:
-<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXX" crossorigin="anonymous"></script>
--->`,
+  ADS_SCRIPT: `<script src="https://pl28920176.effectivegatecpm.com/11/77/23/1177237385e4c7c32c1120dbef3369ea.js"></script>`,
   
   // Exam Notifications - Admin set karega
   EXAMS: [
     {
       id: '1',
       name: 'BCA 3rd Sem Exams',
-      date: '2026-04-15',
+      date: '2025-04-15',
       beforeMessage: '📚 Exam is near! Start studying now. All the best! 🎯',
       dayMessage: '🎯 Best of luck for your exam! You got this! 💪',
       enabled: true,
