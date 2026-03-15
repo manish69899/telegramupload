@@ -63,7 +63,7 @@ const CONFIG = {
   
   // Links - '#' = Hidden
   LINKS: {
-    CHANNEL: 'https://t.me/pyqera',
+    CHANNEL: '#',
     NOTES_CHANNEL: '#',
     DISCUSSION_GROUP: '#',
     INSTAGRAM: '#',
@@ -73,12 +73,16 @@ const CONFIG = {
     SUPPORT: '#',
   },
   
+
+  
   // Exam Notifications - Admin set karega
+  // ⚠️ IMPORTANT: Date must be FUTURE date (YYYY-MM-DD format)
+  // Agar date beet chuki hai to exam show NAHI hoga!
   EXAMS: [
     {
       id: '1',
       name: 'BCA 3rd Sem Exams',
-      date: '2025-04-15',
+      date: '2025-07-15',                    // 👈 Future date dalna zaroori hai!
       beforeMessage: '📚 Exam is near! Start studying now. All the best! 🎯',
       dayMessage: '🎯 Best of luck for your exam! You got this! 💪',
       enabled: true,
@@ -86,7 +90,7 @@ const CONFIG = {
     {
       id: '2',
       name: 'B.Tech End Sem',
-      date: '2025-02-25',
+      date: '2025-07-25',                    // 👈 Future date dalna zaroori hai!
       beforeMessage: '📚 Exam is tomorrow! Last minute revision! 📖',
       dayMessage: '🎯 All the best for your exam today! 🍀',
       enabled: true,
@@ -1283,7 +1287,9 @@ export default function HomePage() {
               </motion.div>
             )}
 
-
+          </div>
+        </div>
+      </main>
 
       {/* Footer */}
       <footer className={`border-t py-3 ${theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white/90 border-gray-200'} backdrop-blur-xl`}>
