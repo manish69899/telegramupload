@@ -70,7 +70,7 @@ const CONFIG = {
     YOUTUBE: '#',
     WHATSAPP: '#',
     WEBSITE: 'https://pyqera.pages.dev',
-    SUPPORT: 'https://pyqerasupport.pages.dev',
+    SUPPORT: 'https://pyqera-donate.pages.dev',
   },
   
 
