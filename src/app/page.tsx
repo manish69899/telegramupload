@@ -63,14 +63,14 @@ const CONFIG = {
   
   // Links - '#' = Hidden
   LINKS: {
-    CHANNEL: '#',
+    CHANNEL: 'https://t.me/pyqera',
     NOTES_CHANNEL: '#',
     DISCUSSION_GROUP: '#',
     INSTAGRAM: '#',
     YOUTUBE: '#',
     WHATSAPP: '#',
-    WEBSITE: '#',
-    SUPPORT: '#',
+    WEBSITE: 'https://pyqera.pages.dev',
+    SUPPORT: 'https://pyqerasupport.pages.dev',
   },
   
 
