@@ -73,9 +73,6 @@ const CONFIG = {
     SUPPORT: '#',
   },
   
-  // Ads Script - Yahan apna script paste karo
-  ADS_SCRIPT: `https://pl28920176.effectivegatecpm.com/11/77/23/1177237385e4c7c32c1120dbef3369ea.js`,
-  
   // Exam Notifications - Admin set karega
   EXAMS: [
     {
@@ -1285,6 +1282,8 @@ export default function HomePage() {
                 </div>
               </motion.div>
             )}
+
+
 
       {/* Footer */}
       <footer className={`border-t py-3 ${theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white/90 border-gray-200'} backdrop-blur-xl`}>
