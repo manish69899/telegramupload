@@ -74,7 +74,7 @@ const CONFIG = {
   },
   
   // Ads Script - Yahan apna script paste karo
-  ADS_SCRIPT: `<script src="https://pl28920176.effectivegatecpm.com/11/77/23/1177237385e4c7c32c1120dbef3369ea.js"></script>`,
+  ADS_SCRIPT: `https://pl28920176.effectivegatecpm.com/11/77/23/1177237385e4c7c32c1120dbef3369ea.js`,
   
   // Exam Notifications - Admin set karega
   EXAMS: [
