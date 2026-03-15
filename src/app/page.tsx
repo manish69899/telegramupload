@@ -84,7 +84,7 @@ const CONFIG = {
     {
       id: '1',
       name: 'BCA 3rd Sem Exams',
-      date: '2025-02-15',
+      date: '2026-04-15',
       beforeMessage: '📚 Exam is near! Start studying now. All the best! 🎯',
       dayMessage: '🎯 Best of luck for your exam! You got this! 💪',
       enabled: true,
