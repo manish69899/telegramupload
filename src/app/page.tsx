@@ -1286,15 +1286,6 @@ export default function HomePage() {
               </motion.div>
             )}
 
-            {/* Ads */}
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }} className={`rounded-xl border p-4 ${theme === 'dark' ? 'bg-slate-900/80 border-slate-800' : 'bg-white/80 border-gray-200'}`}>
-              <p className="text-[10px] text-slate-400 mb-2 uppercase font-bold">Advertisement</p>
-              <div className="min-h-[90px] flex items-center justify-center bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 rounded-lg text-slate-400 text-xs" dangerouslySetInnerHTML={{ __html: CONFIG.ADS_SCRIPT }} />
-            </motion.div>
-          </div>
-        </div>
-      </main>
-
       {/* Footer */}
       <footer className={`border-t py-3 ${theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white/90 border-gray-200'} backdrop-blur-xl`}>
         <div className="max-w-6xl mx-auto px-4 flex items-center justify-between">
